@@ -411,7 +411,9 @@ async function getArtistWorks(artistItem, page, type) {
         ps: 30,
         tid: 0,
         pn: page,
-        web_location: 1550101,
+        index: 0,
+        special_type: "",
+        web_location: "333.1387",
         order_avoided: true,
         order: "pubdate",
         keyword: "",
@@ -419,7 +421,7 @@ async function getArtistWorks(artistItem, page, type) {
         dm_img_list: "[]",
         dm_img_str: "V2ViR0wgMS4wIChPcGVuR0wgRVMgMi4wIENocm9taXVtKQ",
         dm_cover_img_str: "QU5HTEUgKE5WSURJQSwgTlZJRElBIEdlRm9yY2UgR1RYIDE2NTAgKDB4MDAwMDFGOTEpIERpcmVjdDNEMTEgdnNfNV8wIHBzXzVfMCwgRDNEMTEpR29vZ2xlIEluYy4gKE5WSURJQS",
-        dm_img_inter: '{"ds":[],"wh":[0,0,0],"of":[0,0,0]}',
+        dm_img_inter: '{"ds":[],"wh":[4564,4288,68],"of":[401,802,401]}',
         wts: now.toString(),
     };
     const w_rid = await getRid(params);
@@ -955,7 +957,7 @@ async function getLyric(musicItem) {
 module.exports = {
     platform: "bilibili",
     appVersion: ">=0.0",
-    version: "0.5.2",
+    version: "0.5.3",
     author: "猫头猫 (cookie+字幕扩展)",
     cacheControl: "no-cache",
     srcUrl: "https://cdn.jsdelivr.net/gh/martin65536/bilibili-musicfree@main/bilibili.js",
