@@ -761,10 +761,10 @@ async function getLyric(musicItem) {
 module.exports = {
     platform: "bilibili",
     appVersion: ">=0.0",
-    version: "0.4.5",
+    version: "0.4.6",
     author: "猫头猫 (cookie+字幕扩展)",
     cacheControl: "no-cache",
-    srcUrl: "https://raw.githubusercontent.com/martin65536/bilibili-musicfree/main/bilibili.js",
+    srcUrl: "https://cdn.jsdelivr.net/gh/martin65536/bilibili-musicfree@main/bilibili.js",
     primaryKey: ["id", "aid", "bvid", "cid"],
     userVariables: [
         {
