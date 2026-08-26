@@ -525,6 +525,15 @@ async function importMusicSheet(urlLike) {
         });
     });
 }
+// ===== 评论 =====
+// B站评论接口：https://api.bilibili.com/x/v2/reply/main（无需 wbi 签名）
+// 采用 cursor 游标翻页（不是 pn/ps）：
+//   首次请求 next=0，返回 cursor.next 作为下一页游标
+//   后续请求传 next=上次返回的 cursor.next
+//   cursor.is_end=true 表示最后一页
+// 由于 MusicFree 的 getMusicComments(musicItem, page) 无状态（page 是数字），
+// 而 B站用游标翻页，这里用模块级 Map 按 aid 缓存上次返回的 cursor.next
+const commentCursorCache = new Map(); // aid -> next cursor
 function formatComment(item) {
     var _a, _b, _c, _d, _e;
     return {
@@ -537,33 +546,62 @@ function formatComment(item) {
         location: ((_e = (_d = item.reply_control) === null || _d === void 0 ? void 0 : _d.location) === null || _e === void 0 ? void 0 : _e.startsWith("IP属地：")) ? item.reply_control.location.slice(5) : undefined
     };
 }
-async function getMusicComments(musicItem) {
+async function getMusicComments(musicItem, page) {
     var _a, _b;
+    const aid = musicItem.aid;
+    if (!aid) {
+        return { isEnd: true, data: [] };
+    }
+    const currentPage = page || 1;
+    const ps = 30;
+    // 从缓存取上次的 cursor.next（首页用 0）
+    const cacheKey = String(aid);
+    let next = currentPage === 1 ? 0 : (commentCursorCache.get(cacheKey) || 0);
     const params = {
         type: 1,
+        oid: aid,
         mode: 3,
-        oid: musicItem.aid,
+        next: next,
+        ps: ps,
         plat: 1,
         web_location: 1315875,
         wts: Math.floor(Date.now() / 1000)
     };
-    const w_rid = await getRid(params);
-    const res = (await (axios_1.default.get("https://api.bilibili.com/x/v2/reply/wbi/main", {
-        params: Object.assign(Object.assign({}, params), { w_rid }),
-        headers: Object.assign(Object.assign({}, headers), { cookie: await getCookieString(), referer: "https://www.bilibili.com/" })
-    }))).data;
-    const data = res.data.replies;
-    const comments = [];
-    for (let i = 0; i < data.length; ++i) {
-        comments[i] = formatComment(data[i]);
-        if ((_a = data[i].replies) === null || _a === void 0 ? void 0 : _a.length) {
-            comments[i].replies = (_b = data[i]) === null || _b === void 0 ? void 0 : _b.replies.map(formatComment);
+    try {
+        const res = (await (axios_1.default.get("https://api.bilibili.com/x/v2/reply/main", {
+            params: params,
+            headers: Object.assign(Object.assign({}, headers), { cookie: await getCookieString(), referer: "https://www.bilibili.com/" })
+        }))).data;
+        if (res.code !== 0 || !res.data) {
+            return { isEnd: true, data: [] };
         }
+        const data = res.data;
+        const replies = data.replies || [];
+        const cursor = data.cursor || {};
+        // 缓存 cursor.next 供下一页使用
+        if (typeof cursor.next === "number") {
+            commentCursorCache.set(cacheKey, cursor.next);
+        }
+        const comments = [];
+        for (let i = 0; i < replies.length; ++i) {
+            comments[i] = formatComment(replies[i]);
+            if ((_a = replies[i].replies) === null || _a === void 0 ? void 0 : _a.length) {
+                comments[i].replies = (_b = replies[i]) === null || _b === void 0 ? void 0 : _b.replies.map(formatComment);
+            }
+        }
+        // 判断是否最后一页：
+        // - cursor.is_end=true 且 next=0 → 确实到底
+        // - 但匿名状态下 is_end 可能误报为 true 而 next 有值，所以只要 next>0 就认为还有下一页
+        // - 返回条数少于 ps 也作为到底的信号
+        const hasMore = (typeof cursor.next === "number" && cursor.next > 0) && replies.length >= ps;
+        return {
+            isEnd: !hasMore,
+            data: comments
+        };
+    } catch (error) {
+        console.error("获取评论失败:", error.message);
+        return { isEnd: true, data: [] };
     }
-    return {
-        isEnd: true,
-        data: comments
-    };
 }
 // ===== 字幕作为歌词 =====
 // B站字幕链路：
@@ -648,12 +686,12 @@ async function getLyric(musicItem) {
     }
 }
 module.exports = {
-    platform: "bilibili(字幕版)",
+    platform: "bilibili",
     appVersion: ">=0.0",
-    version: "0.4.0",
+    version: "0.4.1",
     author: "猫头猫 (cookie+字幕扩展)",
     cacheControl: "no-cache",
-    srcUrl: "https://cdn.jsdelivr.net/gh/martin65536/bilibili-musicfree@v0.4.0/bilibili.js",
+    srcUrl: "https://cdn.jsdelivr.net/gh/martin65536/bilibili-musicfree@v0.4.1/bilibili.js",
     primaryKey: ["id", "aid", "bvid", "cid"],
     userVariables: [
         {
