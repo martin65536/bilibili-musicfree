@@ -375,6 +375,74 @@ async function getMediaSource(musicItem, quality) {
         headers: _headers,
     };
 }
+// 获取歌曲详情（补全播放量、简介、UP主等信息）
+// 复用 getCid（它调的就是 view 接口，返回里含 stat/desc/owner 等）
+// 返回 Partial<IMusicItem>，会与现有数据合并
+async function getMusicInfo(musicItem) {
+    const bvid = musicItem.bvid;
+    const aid = musicItem.aid;
+    if (!bvid && !aid) {
+        return {};
+    }
+    try {
+        const cidRes = await getCid(bvid, aid);
+        const d = cidRes?.data;
+        if (!d) {
+            return {};
+        }
+        const result = {};
+        // 补全标准字段
+        if (d.cid) result.cid = d.cid;
+        if (d.duration) result.duration = d.duration;
+        if (d.title) result.title = he.decode(d.title);
+        if (d.pic) {
+            result.artwork = d.pic.startsWith("//") ? "https:" + d.pic : d.pic;
+        }
+        // UP主信息
+        if (d.owner?.name) {
+            result.artist = d.owner.name;
+        }
+        // 扩展字段：视频简介
+        if (d.desc && String(d.desc).trim()) {
+            result.desc = String(d.desc).trim();
+        }
+        // 扩展字段：统计数据
+        const stat = d.stat;
+        if (stat) {
+            if (typeof stat.view === "number") result.playCount = stat.view;
+            if (typeof stat.like === "number") result.likeCount = stat.like;
+            if (typeof stat.coin === "number") result.coinCount = stat.coin;
+            if (typeof stat.favorite === "number") result.favoriteCount = stat.favorite;
+            if (typeof stat.danmaku === "number") result.danmakuCount = stat.danmaku;
+            if (typeof stat.reply === "number") result.replyCount = stat.reply;
+            if (typeof stat.share === "number") result.shareCount = stat.share;
+        }
+        // 扩展字段：发布日期
+        if (d.pubdate) {
+            result.date = dayjs.unix(d.pubdate).format("YYYY-MM-DD");
+        }
+        // 扩展字段：分区
+        if (d.tname) {
+            result.category = d.tname;
+        }
+        // 扩展字段：UP主头像
+        if (d.owner?.face) {
+            result.artistAvatar = d.owner.face;
+        }
+        // 扩展字段：UP主 uid
+        if (d.owner?.mid) {
+            result.artistId = d.owner.mid;
+        }
+        // 移除 undefined 字段
+        Object.keys(result).forEach((key) => {
+            if (result[key] === undefined) delete result[key];
+        });
+        return result;
+    } catch (error) {
+        console.error("获取歌曲详情失败:", error.message);
+        return {};
+    }
+}
 async function getTopLists() {
     await getCookie();
     const precious = {
@@ -761,7 +829,7 @@ async function getLyric(musicItem) {
 module.exports = {
     platform: "bilibili",
     appVersion: ">=0.0",
-    version: "0.4.6",
+    version: "0.4.7",
     author: "猫头猫 (cookie+字幕扩展)",
     cacheControl: "no-cache",
     srcUrl: "https://cdn.jsdelivr.net/gh/martin65536/bilibili-musicfree@main/bilibili.js",
@@ -816,5 +884,6 @@ module.exports = {
     getTopListDetail,
     importMusicSheet,
     getMusicComments,
-    getLyric
+    getLyric,
+    getMusicInfo
 };
