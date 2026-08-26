@@ -880,6 +880,7 @@ async function getMusicComments(musicItem, page) {
         } else {
             // 评论接口失败（风控/无评论等），replies 保持空，但简介仍要显示
             console.warn("[getMusicComments] aid=" + aid + " page=" + currentPage + " 接口异常 code=" + res.code + " msg=" + res.message);
+            console.warn("[getMusicComments] reply/main完整返回: " + JSON.stringify(res).slice(0, 500));
         }
         const comments = [];
         for (let i = 0; i < replies.length; ++i) {
@@ -978,11 +979,14 @@ async function getLyric(musicItem) {
         })).data;
         if (playerRes.code !== 0 || !playerRes.data || !playerRes.data.subtitle) {
             console.warn("[getLyric] player/wbi/v2 失败 bvid=" + bvid + " aid=" + aid + " cid=" + cid + " code=" + (playerRes && playerRes.code) + " msg=" + (playerRes && playerRes.message) + "（可能未登录或被风控）");
+            console.warn("[getLyric] player/wbi/v2 完整返回: " + JSON.stringify(playerRes).slice(0, 500));
             return {};
         }
         const subtitles = playerRes.data.subtitle.subtitles || [];
         console.log("[getLyric] bvid=" + bvid + " aid=" + aid + " 字幕列表条数=" + subtitles.length + (subtitles.length > 0 ? " 语言=" + subtitles.map(s=>s.lan).join(",") : "（无字幕）"));
         if (subtitles.length === 0) {
+            // 字幕为空时打印 subtitle 完整结构，帮助诊断
+            console.warn("[getLyric] subtitle完整结构: " + JSON.stringify(playerRes.data.subtitle).slice(0, 300));
             return {};
         }
         // 找中文字幕（lan 含 zh 或 cn）
@@ -1044,7 +1048,7 @@ async function getLyric(musicItem) {
 module.exports = {
     platform: "bilibili",
     appVersion: ">=0.0",
-    version: "0.5.7",
+    version: "0.5.8",
     author: "猫头猫 (cookie+字幕扩展)",
     cacheControl: "no-cache",
     srcUrl: "https://cdn.jsdelivr.net/gh/martin65536/bilibili-musicfree@main/bilibili.js",
