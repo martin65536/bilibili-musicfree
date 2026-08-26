@@ -599,15 +599,18 @@ async function getMusicComments(musicItem, page) {
             params: params,
             headers: Object.assign(Object.assign({}, headers), { cookie: await getCookieString(), referer: "https://www.bilibili.com/" })
         }))).data;
-        if (res.code !== 0 || !res.data) {
-            return { isEnd: true, data: [] };
-        }
-        const data = res.data;
-        const replies = data.replies || [];
-        const cursor = data.cursor || {};
-        // 缓存 cursor.next 供下一页使用
-        if (typeof cursor.next === "number") {
-            commentCursorCache.set(cacheKey, cursor.next);
+        let replies = [];
+        let cursor = {};
+        if (res.code === 0 && res.data) {
+            replies = res.data.replies || [];
+            cursor = res.data.cursor || {};
+            // 缓存 cursor.next 供下一页使用
+            if (typeof cursor.next === "number") {
+                commentCursorCache.set(cacheKey, cursor.next);
+            }
+        } else {
+            // 评论接口失败（风控/无评论等），replies 保持空，但简介仍要显示
+            console.warn("评论接口返回异常:", res.code, res.message);
         }
         const comments = [];
         for (let i = 0; i < replies.length; ++i) {
@@ -616,9 +619,8 @@ async function getMusicComments(musicItem, page) {
                 comments[i].replies = (_b = replies[i]) === null || _b === void 0 ? void 0 : _b.replies.map(formatComment);
             }
         }
-        // 仅在第一页，且评论列表不为空时，把视频简介插到最前面
-        // 评论列表为空说明没评论，插简介没意义
-        if (currentPage === 1 && comments.length > 0) {
+        // 仅在第一页插入视频简介——即使没有评论也要显示简介
+        if (currentPage === 1) {
             try {
                 const desc = await getVideoDesc(musicItem);
                 if (desc) {
@@ -633,10 +635,9 @@ async function getMusicComments(musicItem, page) {
             }
         }
         // 判断是否最后一页：
-        // - cursor.is_end=true 且 next=0 → 确实到底
-        // - 但匿名状态下 is_end 可能误报为 true 而 next 有值，所以只要 next>0 就认为还有下一页
-        // - 返回条数少于 ps 也作为到底的信号
-        const hasMore = (typeof cursor.next === "number" && cursor.next > 0) && replies.length >= ps;
+        // - 有评论时：cursor.next > 0 且返回条数 >= ps 才认为有下一页
+        // - 没评论时（只有简介）：直接 isEnd=true
+        const hasMore = replies.length > 0 && (typeof cursor.next === "number" && cursor.next > 0) && replies.length >= ps;
         return {
             isEnd: !hasMore,
             data: comments
@@ -760,10 +761,10 @@ async function getLyric(musicItem) {
 module.exports = {
     platform: "bilibili",
     appVersion: ">=0.0",
-    version: "0.4.3",
+    version: "0.4.4",
     author: "猫头猫 (cookie+字幕扩展)",
     cacheControl: "no-cache",
-    srcUrl: "https://cdn.jsdelivr.net/gh/martin65536/bilibili-musicfree@v0.4.3/bilibili.js",
+    srcUrl: "https://cdn.jsdelivr.net/gh/martin65536/bilibili-musicfree@v0.4.4/bilibili.js",
     primaryKey: ["id", "aid", "bvid", "cid"],
     userVariables: [
         {
