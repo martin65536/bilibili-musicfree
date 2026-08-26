@@ -48,6 +48,22 @@ function isLoggedIn() {
     const c = getUserCookie();
     return /SESSDATA=/.test(c);
 }
+// 读取用户开关：albumWithDuration=1 时，专辑名后追加视频时长 (mm:ss)
+function isAlbumWithDurationEnabled() {
+    try {
+        const v = env.getUserVariables();
+        return String(v && v.albumWithDuration || "").trim() === "1";
+    } catch (e) {
+        return false;
+    }
+}
+// 秒数转 mm:ss（用于专辑名追加时长）
+function secToMmSs(sec) {
+    if (typeof sec !== "number" || !isFinite(sec) || sec < 0) sec = 0;
+    const m = Math.floor(sec / 60);
+    const s = sec - m * 60;
+    return `${String(m).padStart(2, "0")}:${String(Math.floor(s)).padStart(2, "0")}`;
+}
 async function getCid(bvid, aid) {
     const params = bvid ? { bvid } : { aid };
     const cidRes = (await axios_1.default.get("https://api.bilibili.com/x/web-interface/view", {
@@ -137,14 +153,23 @@ async function getFavoriteList(id) {
 function formatMedia(result) {
     var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k;
     const title = he.decode((_b = (_a = result.title) === null || _a === void 0 ? void 0 : _a.replace(/(\<em(.*?)\>)|(\<\/em\>)/g, "")) !== null && _b !== void 0 ? _b : "");
+    const baseAlbum = (_h = result.bvid) !== null && _h !== void 0 ? _h : result.aid;
+    // 用户开关 albumWithDuration=1 时，专辑名后追加时长 (mm:ss)
+    let album = baseAlbum;
+    if (isAlbumWithDurationEnabled()) {
+        const durSec = durationToSec(result.duration);
+        if (durSec > 0) {
+            album = `${baseAlbum} (${secToMmSs(durSec)})`;
+        }
+    }
     return {
         id: (_d = (_c = result.cid) !== null && _c !== void 0 ? _c : result.bvid) !== null && _d !== void 0 ? _d : result.aid,
         aid: result.aid,
         bvid: result.bvid,
-        artist: (_e = result.author) !== null && _e !== void 0 ? _e : (_f = result.owner) === null || _f === void 0 ? void 0 : _f.name,
+        artist: (_e = result.author) !== null && _e !== void 0 ? _e : (_f = result.owner) === null && _f === void 0 ? void 0 : _f.name,
         title,
         alias: (_g = title.match(/《(.+?)》/)) === null || _g === void 0 ? void 0 : _g[1],
-        album: (_h = result.bvid) !== null && _h !== void 0 ? _h : result.aid,
+        album: album,
         artwork: ((_j = result.pic) === null || _j === void 0 ? void 0 : _j.startsWith("//"))
             ? "http:".concat(result.pic)
             : result.pic,
@@ -588,7 +613,9 @@ async function importMusicSheet(urlLike) {
             artwork: _.cover,
             title: _.title,
             artist: (_a = _.upper) === null || _a === void 0 ? void 0 : _a.name,
-            album: (_b = _.bvid) !== null && _b !== void 0 ? _b : _.aid,
+            album: isAlbumWithDurationEnabled() && durationToSec(_.duration) > 0
+                ? `${(_.bvid || _.aid)} (${secToMmSs(durationToSec(_.duration))})`
+                : ((_b = _.bvid) !== null && _b !== void 0 ? _b : _.aid),
             duration: durationToSec(_.duration),
         });
     });
@@ -829,7 +856,7 @@ async function getLyric(musicItem) {
 module.exports = {
     platform: "bilibili",
     appVersion: ">=0.0",
-    version: "0.4.7",
+    version: "0.4.8",
     author: "猫头猫 (cookie+字幕扩展)",
     cacheControl: "no-cache",
     srcUrl: "https://cdn.jsdelivr.net/gh/martin65536/bilibili-musicfree@main/bilibili.js",
@@ -839,6 +866,11 @@ module.exports = {
             key: "cookie",
             name: "B站登录Cookie",
             hint: "可选。在浏览器登录bilibili后，F12→Network→任一请求→Cookie，复制完整值（含SESSDATA）。填了才能获取AI字幕、导入私有收藏夹等。不填则匿名使用。"
+        },
+        {
+            key: "albumWithDuration",
+            name: "专辑名追加时长",
+            hint: "可选。设为 1 时，搜索结果/收藏夹导入的专辑名后会追加视频时长，如 BV1sb411t7ps (01:21)。不填或填 0 则不追加。"
         }
     ],
     hints: {
