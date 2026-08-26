@@ -966,15 +966,26 @@ async function getLyric(musicItem) {
         }
         const referer = bvid ? `https://www.bilibili.com/video/${bvid}` : "https://www.bilibili.com/";
         // 请求 player/wbi/v2 拿字幕列表
-        // 请求头对齐浏览器：加 origin + accept-language，B站对部分接口检测这些
+        // 请求头+参数对齐浏览器：B站检测 web_location/dm_img_str 等参数判断真浏览器
+        // 缺这些参数会返回 subtitles:[]（即使登录了）
         const playerHeaders = Object.assign(Object.assign({}, headers), {
             cookie: await getCookieString(),
             referer: referer,
             origin: "https://www.bilibili.com",
             "accept-language": "zh-CN,zh;q=0.9,en;q=0.8",
         });
+        const playerParams = aid ? { 
+            aid: aid, 
+            cid: cid,
+            isGaiaAvoided: false,
+            web_location: 1315873,
+            dm_img_list: "[]",
+            dm_img_str: "V2ViR0wgMS4wIChPcGVuR0wgRVMgMi4wIENocm9taXVtKQ",
+            dm_cover_img_str: "QU5HTEUgKE5WSURJQSwgTlZJRElBIEdlRm9yY2UgR1RYIDE2NTAgKDB4MDAwMDFGOTEpIERpcmVjdDNEMTEgdnNfNV8wIHBzXzVfMCwgRDNEMTEpR29vZ2xlIEluYy4gKE5WSURJQS",
+            dm_img_inter: '{"ds":[],"wh":[4564,4288,68],"of":[401,802,401]}',
+        } : { bvid: bvid, cid: cid };
         const playerRes = (await axios_1.default.get("https://api.bilibili.com/x/player/wbi/v2", {
-            params: aid ? { aid, cid } : { bvid, cid },
+            params: playerParams,
             headers: playerHeaders,
         })).data;
         if (playerRes.code !== 0 || !playerRes.data || !playerRes.data.subtitle) {
@@ -1048,7 +1059,7 @@ async function getLyric(musicItem) {
 module.exports = {
     platform: "bilibili",
     appVersion: ">=0.0",
-    version: "0.5.8",
+    version: "0.5.9",
     author: "猫头猫 (cookie+字幕扩展)",
     cacheControl: "no-cache",
     srcUrl: "https://cdn.jsdelivr.net/gh/martin65536/bilibili-musicfree@main/bilibili.js",
