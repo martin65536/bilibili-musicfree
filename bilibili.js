@@ -34,9 +34,15 @@ function getUserCookie() {
             const hasSessdata = /SESSDATA=/.test(c);
             const hasBiliJct = /bili_jct=/.test(c);
             const hasBuvid3 = /buvid3=/.test(c);
-            console.log("[getUserCookie] 已读取用户cookie 长度=" + c.length + " 含SESSDATA=" + hasSessdata + " 含bili_jct=" + hasBiliJct + " 含buvid3=" + hasBuvid3);
+            const hasDedeUserID = /DedeUserID=/.test(c);
+            const hasBLsid = /b_lsid=/.test(c);
+            console.log("[getUserCookie] 已读取用户cookie 长度=" + c.length + " 含SESSDATA=" + hasSessdata + " 含bili_jct=" + hasBiliJct + " 含buvid3=" + hasBuvid3 + " 含DedeUserID=" + hasDedeUserID + " 含b_lsid=" + hasBLsid);
             if (!hasSessdata) {
                 console.warn("[getUserCookie] ⚠️ 用户cookie不含SESSDATA，登录态功能(字幕/评论分页)将不可用");
+            }
+            // 提示完整cookie建议
+            if (hasSessdata && (!hasDedeUserID || !hasBuvid3)) {
+                console.warn("[getUserCookie] ⚠️ cookie字段不全(缺DedeUserID或buvid3)，B站可能返回降级数据。建议从浏览器复制完整cookie整行值。");
             }
         } else {
             console.log("[getUserCookie] 用户未填cookie，将使用匿名buvid");
@@ -48,25 +54,11 @@ function getUserCookie() {
     }
 }
 // 拼接最终请求用的 cookie 字符串：用户 cookie 优先，匿名 buvid 作为补充
-// 如果用户填了 cookie，直接用用户的（里面通常已含 buvid3/buvid4/SESSDATA 等）
+// 如果用户填了 cookie，直接用用户的
 // 否则降级用匿名 buvid3/buvid4
-// 关键修复：用户cookie如果缺buvid3（设备指纹），B站会降级返回受限数据
-// （评论只给3条、字幕列表为空等）。这里自动补上匿名buvid3/buvid4
 async function getCookieString() {
     const userCookie = getUserCookie();
     if (userCookie) {
-        // 检查用户cookie是否缺buvid3
-        const hasBuvid3 = /buvid3=/.test(userCookie);
-        if (hasBuvid3) {
-            return userCookie;
-        }
-        // 缺buvid3，自动补匿名buvid3/buvid4
-        await getCookie();
-        if (cookie && cookie.b_3) {
-            console.log("[getCookieString] 用户cookie缺buvid3，自动补全匿名buvid3/buvid4");
-            return userCookie + ";buvid3=" + cookie.b_3 + ";buvid4=" + cookie.b_4;
-        }
-        console.warn("[getCookieString] 用户cookie缺buvid3，且匿名buvid获取失败");
         return userCookie;
     }
     await getCookie();
@@ -973,9 +965,16 @@ async function getLyric(musicItem) {
         }
         const referer = bvid ? `https://www.bilibili.com/video/${bvid}` : "https://www.bilibili.com/";
         // 请求 player/wbi/v2 拿字幕列表
+        // 请求头对齐浏览器：加 origin + accept-language，B站对部分接口检测这些
+        const playerHeaders = Object.assign(Object.assign({}, headers), {
+            cookie: await getCookieString(),
+            referer: referer,
+            origin: "https://www.bilibili.com",
+            "accept-language": "zh-CN,zh;q=0.9,en;q=0.8",
+        });
         const playerRes = (await axios_1.default.get("https://api.bilibili.com/x/player/wbi/v2", {
             params: aid ? { aid, cid } : { bvid, cid },
-            headers: Object.assign(Object.assign({}, headers), { cookie: await getCookieString(), referer }),
+            headers: playerHeaders,
         })).data;
         if (playerRes.code !== 0 || !playerRes.data || !playerRes.data.subtitle) {
             console.warn("[getLyric] player/wbi/v2 失败 bvid=" + bvid + " aid=" + aid + " cid=" + cid + " code=" + (playerRes && playerRes.code) + " msg=" + (playerRes && playerRes.message) + "（可能未登录或被风控）");
@@ -1045,7 +1044,7 @@ async function getLyric(musicItem) {
 module.exports = {
     platform: "bilibili",
     appVersion: ">=0.0",
-    version: "0.5.6",
+    version: "0.5.7",
     author: "猫头猫 (cookie+字幕扩展)",
     cacheControl: "no-cache",
     srcUrl: "https://cdn.jsdelivr.net/gh/martin65536/bilibili-musicfree@main/bilibili.js",
