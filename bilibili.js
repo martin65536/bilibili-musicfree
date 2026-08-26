@@ -26,8 +26,24 @@ async function getCookie() {
 function getUserCookie() {
     try {
         const v = env.getUserVariables();
-        return (v && v.cookie && String(v.cookie).trim()) || "";
+        const raw = (v && v.cookie) ? v.cookie : "";
+        // 用户可能填了字符串，也可能是其他类型，统一转字符串
+        const c = raw ? String(raw).trim() : "";
+        if (c) {
+            // 脱敏日志：只显示长度和是否含关键 cookie 项，不泄露完整值
+            const hasSessdata = /SESSDATA=/.test(c);
+            const hasBiliJct = /bili_jct=/.test(c);
+            const hasBuvid3 = /buvid3=/.test(c);
+            console.log("[getUserCookie] 已读取用户cookie 长度=" + c.length + " 含SESSDATA=" + hasSessdata + " 含bili_jct=" + hasBiliJct + " 含buvid3=" + hasBuvid3);
+            if (!hasSessdata) {
+                console.warn("[getUserCookie] ⚠️ 用户cookie不含SESSDATA，登录态功能(字幕/评论分页)将不可用");
+            }
+        } else {
+            console.log("[getUserCookie] 用户未填cookie，将使用匿名buvid");
+        }
+        return c;
     } catch (e) {
+        console.error("[getUserCookie] 读取异常:", e.message);
         return "";
     }
 }
@@ -40,13 +56,19 @@ async function getCookieString() {
         return userCookie;
     }
     await getCookie();
-    if (!cookie) return "";
-    return `buvid3=${cookie.b_3};buvid4=${cookie.b_4}`;
+    if (!cookie) {
+        console.warn("[getCookieString] 匿名buvid也为空，请求将不带cookie");
+        return "";
+    }
+    const anon = `buvid3=${cookie.b_3};buvid4=${cookie.b_4}`;
+    return anon;
 }
 // 判断当前是否处于登录状态（用于决定是否尝试拉取字幕）
 function isLoggedIn() {
     const c = getUserCookie();
-    return /SESSDATA=/.test(c);
+    const logged = /SESSDATA=/.test(c);
+    console.log("[isLoggedIn] " + (logged ? "✅ 已登录(有SESSDATA)" : "❌ 未登录(无SESSDATA，字幕/评论分页受限)"));
+    return logged;
 }
 // 读取用户配置的专辑名模板字符串
 // 默认空 = 只返回 bvid/aid
@@ -844,13 +866,14 @@ async function getMusicComments(musicItem, page) {
         if (res.code === 0 && res.data) {
             replies = res.data.replies || [];
             cursor = res.data.cursor || {};
+            console.log("[getMusicComments] aid=" + aid + " page=" + currentPage + " 成功 条数=" + replies.length + " cursor.next=" + cursor.next + " is_end=" + cursor.is_end + " all_count=" + cursor.all_count);
             // 缓存 cursor.next 供下一页使用
             if (typeof cursor.next === "number") {
                 commentCursorCache.set(cacheKey, cursor.next);
             }
         } else {
             // 评论接口失败（风控/无评论等），replies 保持空，但简介仍要显示
-            console.warn("评论接口返回异常:", res.code, res.message);
+            console.warn("[getMusicComments] aid=" + aid + " page=" + currentPage + " 接口异常 code=" + res.code + " msg=" + res.message);
         }
         const comments = [];
         for (let i = 0; i < replies.length; ++i) {
@@ -918,8 +941,10 @@ function subtitleBodyToLrc(body) {
 async function getLyric(musicItem) {
     // 没有登录 cookie 时，字幕列表基本拿不到，直接返回空（避免无谓请求）
     if (!isLoggedIn()) {
+        console.warn("[getLyric] 未登录，跳过字幕获取 bvid=" + musicItem.bvid + " aid=" + musicItem.aid);
         return {};
     }
+    console.log("[getLyric] 开始获取字幕 bvid=" + musicItem.bvid + " aid=" + musicItem.aid + " cid=" + musicItem.cid);
     try {
         // 拿 cid（搜索结果可能没带 cid）
         let cid = musicItem.cid;
@@ -938,10 +963,12 @@ async function getLyric(musicItem) {
             params: aid ? { aid, cid } : { bvid, cid },
             headers: Object.assign(Object.assign({}, headers), { cookie: await getCookieString(), referer }),
         })).data;
-        if (playerRes.code !== 0 || !playerRes.data?.subtitle) {
+        if (playerRes.code !== 0 || !playerRes.data || !playerRes.data.subtitle) {
+            console.warn("[getLyric] player/wbi/v2 失败 bvid=" + bvid + " aid=" + aid + " cid=" + cid + " code=" + (playerRes && playerRes.code) + " msg=" + (playerRes && playerRes.message) + "（可能未登录或被风控）");
             return {};
         }
         const subtitles = playerRes.data.subtitle.subtitles || [];
+        console.log("[getLyric] bvid=" + bvid + " aid=" + aid + " 字幕列表条数=" + subtitles.length + (subtitles.length > 0 ? " 语言=" + subtitles.map(s=>s.lan).join(",") : "（无字幕）"));
         if (subtitles.length === 0) {
             return {};
         }
@@ -949,6 +976,7 @@ async function getLyric(musicItem) {
         const zhSub = subtitles.find((s) => /zh|cn/i.test(s.lan || ""));
         // 找英文字幕（lan 含 en）
         const enSub = subtitles.find((s) => /en/i.test(s.lan || ""));
+        console.log("[getLyric] 选中: zhSub=" + (zhSub ? zhSub.lan : "无") + " enSub=" + (enSub ? enSub.lan : "无"));
         
         // 下载字幕 JSON 的辅助函数
         async function fetchSubtitleBody(sub) {
@@ -962,9 +990,11 @@ async function getLyric(musicItem) {
         
         const zhBody = zhSub ? await fetchSubtitleBody(zhSub) : null;
         const enBody = enSub ? await fetchSubtitleBody(enSub) : null;
+        console.log("[getLyric] 字幕下载: zhBody条数=" + (zhBody ? zhBody.length : 0) + " enBody条数=" + (enBody ? enBody.length : 0));
         
         // 都没有就报错返回空
         if (!zhBody && !enBody) {
+            console.warn("[getLyric] 字幕内容为空，返回{}");
             return {};
         }
         
@@ -1001,7 +1031,7 @@ async function getLyric(musicItem) {
 module.exports = {
     platform: "bilibili",
     appVersion: ">=0.0",
-    version: "0.5.4",
+    version: "0.5.5",
     author: "猫头猫 (cookie+字幕扩展)",
     cacheControl: "no-cache",
     srcUrl: "https://cdn.jsdelivr.net/gh/martin65536/bilibili-musicfree@main/bilibili.js",
