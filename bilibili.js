@@ -5,26 +5,44 @@ const dayjs = require("dayjs");
 const he = require("he");
 const CryptoJs = require("crypto-js");
 const { load } = require("cheerio");
-const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36";
+const UA_DEFAULT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36";
+// 读取用户自定义 UA（可选）。填了用用户的，否则用默认 Chrome 121
+// 用户可以填自己浏览器的 UA，进一步对齐浏览器指纹，降低被风控概率
+function getUserUA() {
+    try {
+        const v = env.getUserVariables();
+        const u = (v && v.ua && String(v.ua).trim()) || "";
+        return u || UA_DEFAULT;
+    } catch (e) {
+        return UA_DEFAULT;
+    }
+}
 // 请求头对齐 Chrome 浏览器，包括 sec-* 系列
 // axios 会自动加 Accept/Accept-Encoding，必须显式覆盖，否则 B站识别为非浏览器
-const headers = {
-    "user-agent": UA,
-    "accept": "*/*",
-    "accept-encoding": "gzip, deflate, br",
-    "accept-language": "zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6",
-    "sec-ch-ua": '"Not A(Brand";v="99", "Chromium";v="121", "Google Chrome";v="121"',
-    "sec-ch-ua-mobile": "?0",
-    "sec-ch-ua-platform": '"Windows"',
-    "sec-fetch-dest": "empty",
-    "sec-fetch-mode": "cors",
-    "sec-fetch-site": "same-site",
-};
+// UA 动态读取，支持用户自定义
+function getHeaders() {
+    const ua = getUserUA();
+    return {
+        "user-agent": ua,
+        "accept": "*/*",
+        "accept-encoding": "gzip, deflate, br",
+        "accept-language": "zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6",
+        "sec-ch-ua": '"Not A(Brand";v="99", "Chromium";v="121", "Google Chrome";v="121"',
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": '"Windows"',
+        "sec-fetch-dest": "empty",
+        "sec-fetch-mode": "cors",
+        "sec-fetch-site": "same-site",
+    };
+}
+// 兼容旧代码：headers 作为 getHeaders() 的别名调用
+// 注意：使用处需改成 getHeaders()，这里仅为过渡
+const headers = getHeaders();
 let cookie = null;
 async function getCookie() {
     if (!cookie) {
         cookie = (await axios_1.default.get("https://api.bilibili.com/x/frontend/finger/spi", {
-            headers: { "User-Agent": UA },
+            headers: { "User-Agent": getUserUA() },
         })).data.data;
     }
     return cookie;
@@ -163,7 +181,7 @@ function durationToSec(duration) {
     return 0;
 }
 const searchHeaders = {
-    "user-agent": UA,
+    "user-agent": getUserUA(),
     accept: "application/json, text/plain, */*",
     "accept-encoding": "gzip, deflate, br",
     origin: "https://search.bilibili.com",
@@ -434,7 +452,7 @@ async function getWWebId(id) {
     }
     const html = (await axios_1.default.get("https://space.bilibili.com/" + id, {
         headers: {
-            "user-agent": UA,
+            "user-agent": getUserUA(),
         }
     })).data;
     const $ = load(html);
@@ -446,7 +464,7 @@ async function getWWebId(id) {
 }
 async function getArtistWorks(artistItem, page, type) {
     const queryHeaders = {
-        "user-agent": UA,
+        "user-agent": getUserUA(),
         accept: "*/*",
         "accept-encoding": "gzip, deflate, br, zstd",
         origin: "https://space.bilibili.com",
@@ -1020,7 +1038,7 @@ async function getLyric(musicItem) {
             let u = sub.subtitle_url;
             if (u.startsWith("//")) u = "https:" + u;
             if (!u.startsWith("http")) u = "https://" + u;
-            const r = (await axios_1.default.get(u, { headers: { "User-Agent": UA, referer } })).data;
+            const r = (await axios_1.default.get(u, { headers: { "User-Agent": getUserUA(), referer } })).data;
             return Array.isArray(r.body) ? r.body : null;
         }
         
@@ -1067,7 +1085,7 @@ async function getLyric(musicItem) {
 module.exports = {
     platform: "bilibili",
     appVersion: ">=0.0",
-    version: "0.6.0",
+    version: "0.6.1",
     author: "猫头猫 (cookie+字幕扩展)",
     cacheControl: "no-cache",
     srcUrl: "https://cdn.jsdelivr.net/gh/martin65536/bilibili-musicfree@main/bilibili.js",
@@ -1083,6 +1101,11 @@ module.exports = {
             key: "albumTemplate",
             name: "专辑名模板",
             hint: "可选。自定义专辑名格式。占位符：{bvid} {aid} {date} {duration} {durationMmSs} {artist} {title} {playCount} {likeCount} {coinCount} {favoriteCount} {danmakuCount} {replyCount} {shareCount} {category}。默认不填只返回BV号。例：{bvid} ({date}) 显示 BV1sb411t7ps (2019-03-26)；{bvid} 播{playCount} 显示 BV1sb411t7ps 播1331.8万。"
+        },
+        {
+            key: "ua",
+            name: "User-Agent",
+            hint: "可选。自定义请求的User-Agent。不填默认用Chrome 121的UA。建议从浏览器复制你自己的UA（bilibili页面F12→Network→任一请求→Request Headers→user-agent整行值），填了能更好模拟浏览器，降低被风控概率。改完后需重启插件生效。"
         }
     ],
     hints: {
