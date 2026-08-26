@@ -158,11 +158,26 @@ async function searchBase(keyword, page, searchType) {
         search_type: searchType,
         dynamic_offset: 0,
     };
-    const res = (await axios_1.default.get("https://api.bilibili.com/x/web-interface/search/type", {
-        headers: Object.assign(Object.assign({}, searchHeaders), { cookie: await getCookieString() }),
-        params,
-    })).data;
-    return res.data;
+    try {
+        const res = (await axios_1.default.get("https://api.bilibili.com/x/web-interface/search/type", {
+            headers: Object.assign(Object.assign({}, searchHeaders), { cookie: await getCookieString() }),
+            params,
+        })).data;
+        if (!res) {
+            throw new Error("搜索接口返回空（可能被风控）");
+        }
+        if (res.code !== 0) {
+            throw new Error("搜索接口返回错误 code=" + res.code + " msg=" + (res.message || ""));
+        }
+        if (!res.data || !res.data.result) {
+            throw new Error("搜索接口返回数据异常: " + JSON.stringify(res).slice(0, 200));
+        }
+        return res.data;
+    } catch (error) {
+        console.error("[searchBase] 搜索失败 keyword=" + keyword + " page=" + page + " type=" + searchType + ":", error.message);
+        // 返回安全结构，避免上层 .map/.filter 崩溃
+        return { result: [], numResults: 0 };
+    }
 }
 async function getFavoriteList(id) {
     const result = [];
@@ -252,7 +267,7 @@ function formatMedia(result) {
             ? "http:".concat(result.pic)
             : result.pic,
         duration: durationToSec(result.duration),
-        tags: (_k = result.tag) === null && _k === void 0 ? void 0 : _k.split(","),
+        tags: (result.tag && typeof result.tag === "string") ? result.tag.split(",") : undefined,
         date: pubDate,
         playCount: playCount,
         likeCount: likeCount,
@@ -425,75 +440,95 @@ async function getArtistWorks(artistItem, page, type) {
         wts: now.toString(),
     };
     const w_rid = await getRid(params);
-    const res = (await axios_1.default.get("https://api.bilibili.com/x/space/wbi/arc/search", {
-        headers: Object.assign(Object.assign({}, queryHeaders), { cookie: await getCookieString() }),
-        params: Object.assign(Object.assign({}, params), { w_rid }),
-    })).data;
-    const resultData = res.data;
-    const albums = resultData.list.vlist.map(formatMedia);
-    return {
-        isEnd: resultData.page.pn * resultData.page.ps >= resultData.page.count,
-        data: albums,
-    };
+    try {
+        const res = (await axios_1.default.get("https://api.bilibili.com/x/space/wbi/arc/search", {
+            headers: Object.assign(Object.assign({}, queryHeaders), { cookie: await getCookieString() }),
+            params: Object.assign(Object.assign({}, params), { w_rid }),
+        })).data;
+        if (!res) {
+            throw new Error("作者作品接口返回空（可能被风控412）");
+        }
+        if (res.code !== 0) {
+            throw new Error("作者作品接口返回错误 code=" + res.code + " msg=" + (res.message || "") + "（mid=" + artistItem.id + " page=" + page + "）");
+        }
+        if (!res.data || !res.data.list || !res.data.list.vlist) {
+            throw new Error("作者作品数据异常: " + JSON.stringify(res).slice(0, 200));
+        }
+        const resultData = res.data;
+        const albums = resultData.list.vlist.map(formatMedia);
+        return {
+            isEnd: resultData.page && resultData.page.pn ? (resultData.page.pn * resultData.page.ps >= resultData.page.count) : true,
+            data: albums,
+        };
+    } catch (error) {
+        console.error("[getArtistWorks] mid=" + artistItem.id + " page=" + page + ":", error.message);
+        // 返回空结果，不向上抛，避免客户端崩
+        return { isEnd: true, data: [] };
+    }
 }
 async function getMediaSource(musicItem, quality) {
     var _a, _b, _c, _d, _e, _f;
-    let cid = musicItem.cid;
-    if (!cid) {
-        cid = (await getCid(musicItem.bvid, musicItem.aid)).data.cid;
-    }
-    const _params = musicItem.bvid
-        ? {
-            bvid: musicItem.bvid,
+    const logTag = "[getMediaSource] " + (musicItem.bvid || musicItem.aid || "unknown");
+    try {
+        let cid = musicItem.cid;
+        if (!cid) {
+            const cidRes = await getCid(musicItem.bvid, musicItem.aid);
+            if (!cidRes || !cidRes.data || !cidRes.data.cid) {
+                throw new Error("获取cid失败 bvid=" + musicItem.bvid + " aid=" + musicItem.aid + "（视频可能失效或被风控）");
+            }
+            cid = cidRes.data.cid;
         }
-        : {
-            aid: musicItem.aid,
-        };
-    const res = (await axios_1.default.get("https://api.bilibili.com/x/player/playurl", {
-        headers: headers,
-        params: Object.assign(Object.assign({}, _params), { cid: cid, fnval: 16 }),
-    })).data;
-    let url;
-    if (res.data.dash) {
-        const audios = res.data.dash.audio;
-        audios.sort((a, b) => a.bandwidth - b.bandwidth);
-        const len = audios.length;
-        switch (quality) {
-            case "low":
-                url = (_a = audios[0]) === null || _a === void 0 ? void 0 : _a.baseUrl;
-                break;
-            case "standard":
-                url = (_b = audios[Math.min(1, len - 1)]) === null || _b === void 0 ? void 0 : _b.baseUrl;
-                break;
-            case "high":
-                url = (_c = audios[Math.min(2, len - 1)]) === null || _c === void 0 ? void 0 : _c.baseUrl;
-                break;
-            case "super":
-                url = (_d = audios[len - 1]) === null || _d === void 0 ? void 0 : _d.baseUrl;
-                break;
+        const _params = musicItem.bvid ? { bvid: musicItem.bvid } : { aid: musicItem.aid };
+        if (!musicItem.bvid && !musicItem.aid) {
+            throw new Error("musicItem 缺少 bvid 和 aid");
+        }
+        const res = (await axios_1.default.get("https://api.bilibili.com/x/player/playurl", {
+            headers: headers,
+            params: Object.assign(Object.assign({}, _params), { cid: cid, fnval: 16 }),
+        })).data;
+        if (!res) {
+            throw new Error("playurl接口返回空（可能被风控）");
+        }
+        if (res.code !== 0) {
+            throw new Error("playurl接口错误 code=" + res.code + " msg=" + (res.message || ""));
+        }
+        if (!res.data) {
+            throw new Error("playurl返回data为空: " + JSON.stringify(res).slice(0, 200));
+        }
+        let url;
+        if (res.data.dash && res.data.dash.audio && res.data.dash.audio.length > 0) {
+            const audios = res.data.dash.audio;
+            audios.sort((a, b) => a.bandwidth - b.bandwidth);
+            const len = audios.length;
+            switch (quality) {
+                case "low": url = (_a = audios[0]) === null || _a === void 0 ? void 0 : _a.baseUrl; break;
+                case "standard": url = (_b = audios[Math.min(1, len - 1)]) === null || _b === void 0 ? void 0 : _b.baseUrl; break;
+                case "high": url = (_c = audios[Math.min(2, len - 1)]) === null || _c === void 0 ? void 0 : _c.baseUrl; break;
+                case "super": url = (_d = audios[len - 1]) === null || _d === void 0 ? void 0 : _d.baseUrl; break;
+            }
+            if (!url) { url = (_e = audios[len - 1]) === null || _e === void 0 ? void 0 : _e.baseUrl; }
+        } else if (res.data.durl && res.data.durl.length > 0) {
+            url = res.data.durl[0].url;
+        } else {
+            throw new Error("playurl未返回音频流 dash/durl 均为空: " + JSON.stringify(res.data).slice(0, 200));
         }
         if (!url) {
-            url = (_e = audios[len - 1]) === null || _e === void 0 ? void 0 : _e.baseUrl;
+            throw new Error("解析出的播放URL为空");
         }
+        const hostUrl = url.substring(url.indexOf("/") + 2);
+        const _headers = {
+            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.90 Safari/537.36 Edg/89.0.774.63",
+            accept: "*/*",
+            host: hostUrl.substring(0, hostUrl.indexOf("/")),
+            "accept-encoding": "gzip, deflate, br",
+            connection: "keep-alive",
+            referer: "https://www.bilibili.com/video/".concat((_f = (musicItem.bvid !== null && musicItem.bvid !== undefined ? musicItem.bvid : musicItem.aid)) !== null && _f !== void 0 ? _f : ""),
+        };
+        return { url: url, headers: _headers };
+    } catch (error) {
+        console.error(logTag + ":", error.message);
+        throw error;  // getMediaSource 应向上抛，让客户端知道播放失败的原因
     }
-    else {
-        url = res.data.durl[0].url;
-    }
-    const hostUrl = url.substring(url.indexOf("/") + 2);
-    const _headers = {
-        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.90 Safari/537.36 Edg/89.0.774.63",
-        accept: "*/*",
-        host: hostUrl.substring(0, hostUrl.indexOf("/")),
-        "accept-encoding": "gzip, deflate, br",
-        connection: "keep-alive",
-        referer: "https://www.bilibili.com/video/".concat((_f = (musicItem.bvid !== null && musicItem.bvid !== undefined
-            ? musicItem.bvid
-            : musicItem.aid)) !== null && _f !== void 0 ? _f : ""),
-    };
-    return {
-        url: url,
-        headers: _headers,
-    };
 }
 // 获取歌曲详情（补全播放量、简介、UP主等信息）
 // 复用 getCid（它调的就是 view 接口，返回里含 stat/desc/owner 等）
@@ -675,10 +710,19 @@ async function getTopLists() {
 async function getTopListDetail(topListItem) {
     var _a;
     await getCookie();
-    const res = await axios_1.default.get(`https://api.bilibili.com/x/web-interface/${topListItem.id}`, {
-        headers: Object.assign(Object.assign({}, headers), { referer: "https://www.bilibili.com/", cookie: await getCookieString() }),
-    });
-    return Object.assign(Object.assign({}, topListItem), { musicList: (((_a = res.data.data) === null || _a === void 0 ? void 0 : _a.list) || []).map(formatMedia) });
+    try {
+        const res = await axios_1.default.get(`https://api.bilibili.com/x/web-interface/${topListItem.id}`, {
+            headers: Object.assign(Object.assign({}, headers), { referer: "https://www.bilibili.com/", cookie: await getCookieString() }),
+        });
+        if (!res.data || res.data.code !== 0 || !res.data.data) {
+            throw new Error("排行榜详情接口异常 code=" + (res.data && res.data.code) + " msg=" + (res.data && res.data.message) + " id=" + topListItem.id);
+        }
+        const list = ((_a = res.data.data) === null || _a === void 0 ? void 0 : _a.list) || [];
+        return Object.assign(Object.assign({}, topListItem), { musicList: list.map(formatMedia) });
+    } catch (error) {
+        console.error("[getTopListDetail] id=" + topListItem.id + ":", error.message);
+        return Object.assign(Object.assign({}, topListItem), { musicList: [] });
+    }
 }
 async function importMusicSheet(urlLike) {
     var _a, _b, _c, _d;
@@ -957,7 +1001,7 @@ async function getLyric(musicItem) {
 module.exports = {
     platform: "bilibili",
     appVersion: ">=0.0",
-    version: "0.5.3",
+    version: "0.5.4",
     author: "猫头猫 (cookie+字幕扩展)",
     cacheControl: "no-cache",
     srcUrl: "https://cdn.jsdelivr.net/gh/martin65536/bilibili-musicfree@main/bilibili.js",
