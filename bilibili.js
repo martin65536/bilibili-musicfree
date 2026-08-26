@@ -704,25 +704,54 @@ async function getLyric(musicItem) {
         if (subtitles.length === 0) {
             return {};
         }
-        // 优先选 AI 字幕（lan 中含 ai），其次中文字幕，最后第一条
-        let picked = subtitles.find((s) => /ai/i.test(s.lan || "")) ||
-                     subtitles.find((s) => /zh|cn|中/i.test(s.lan || "")) ||
-                     subtitles[0];
-        let subUrl = picked.subtitle_url || "";
-        if (!subUrl) return {};
-        if (subUrl.startsWith("//")) subUrl = "https:" + subUrl;
-        if (!subUrl.startsWith("http")) subUrl = "https://" + subUrl;
-        // 请求字幕 JSON
-        const subRes = (await axios_1.default.get(subUrl, {
-            headers: { "User-Agent": UA, referer },
-        })).data;
-        const body = subRes.body;
-        if (!Array.isArray(body) || body.length === 0) {
+        // 找中文字幕（lan 含 zh 或 cn）
+        const zhSub = subtitles.find((s) => /zh|cn/i.test(s.lan || ""));
+        // 找英文字幕（lan 含 en）
+        const enSub = subtitles.find((s) => /en/i.test(s.lan || ""));
+        
+        // 下载字幕 JSON 的辅助函数
+        async function fetchSubtitleBody(sub) {
+            if (!sub || !sub.subtitle_url) return null;
+            let u = sub.subtitle_url;
+            if (u.startsWith("//")) u = "https:" + u;
+            if (!u.startsWith("http")) u = "https://" + u;
+            const r = (await axios_1.default.get(u, { headers: { "User-Agent": UA, referer } })).data;
+            return Array.isArray(r.body) ? r.body : null;
+        }
+        
+        const zhBody = zhSub ? await fetchSubtitleBody(zhSub) : null;
+        const enBody = enSub ? await fetchSubtitleBody(enSub) : null;
+        
+        // 都没有就报错返回空
+        if (!zhBody && !enBody) {
             return {};
         }
-        const lrc = subtitleBodyToLrc(body);
-        if (!lrc) return {};
-        return { rawLrc: lrc };
+        
+        const result = {};
+        // 中文字幕作为主歌词
+        if (zhBody) {
+            const lrc = subtitleBodyToLrc(zhBody);
+            if (lrc) result.rawLrc = lrc;
+        }
+        // 英文字幕作为翻译歌词（MusicFree 客户端会自动双语展示）
+        if (enBody) {
+            const translation = subtitleBodyToLrc(enBody);
+            if (translation) result.translation = translation;
+        }
+        
+        // 如果中英都没有，但有其它单条字幕，降级用第一条
+        if (!result.rawLrc && !result.translation) {
+            const picked = subtitles[0];
+            const body = await fetchSubtitleBody(picked);
+            if (body && body.length) {
+                result.rawLrc = subtitleBodyToLrc(body);
+            }
+        }
+        
+        if (!result.rawLrc && !result.translation) {
+            return {};
+        }
+        return result;
     } catch (error) {
         console.error("获取字幕失败:", error.message);
         return {};
@@ -731,10 +760,10 @@ async function getLyric(musicItem) {
 module.exports = {
     platform: "bilibili",
     appVersion: ">=0.0",
-    version: "0.4.2",
+    version: "0.4.3",
     author: "猫头猫 (cookie+字幕扩展)",
     cacheControl: "no-cache",
-    srcUrl: "https://cdn.jsdelivr.net/gh/martin65536/bilibili-musicfree@v0.4.2/bilibili.js",
+    srcUrl: "https://cdn.jsdelivr.net/gh/martin65536/bilibili-musicfree@v0.4.3/bilibili.js",
     primaryKey: ["id", "aid", "bvid", "cid"],
     userVariables: [
         {
