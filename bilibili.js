@@ -955,10 +955,11 @@ async function getLyric(musicItem) {
 module.exports = {
     platform: "bilibili",
     appVersion: ">=0.0",
-    version: "0.5.1",
+    version: "0.5.2",
     author: "猫头猫 (cookie+字幕扩展)",
     cacheControl: "no-cache",
     srcUrl: "https://cdn.jsdelivr.net/gh/martin65536/bilibili-musicfree@main/bilibili.js",
+    description: "在 MusicFree 搜索/播放 B站视频音频。基于 maotoumao 版本扩展，新增：登录Cookie支持、AI字幕作为歌词(双语)、评论分页与视频简介、播放量/点赞等统计字段、专辑名模板。\n\n【功能】\n• 搜索视频/UP主，播放视频音频流\n• 排行榜(全站/音乐/游戏等分区)、每周必看、入站必刷\n• 导入收藏夹为歌单\n• 获取评论(无限滚动)，首条自动显示视频简介\n• 获取AI字幕作为歌词，支持中英双语(rawLrc中文+translation英文)\n• 搜索结果自带播放量/点赞/收藏/弹幕/评论数\n• 专辑名可自定义模板(占位符: {bvid} {date} {playCount} {likeCount} {durationMmSs} {artist} {category} 等)\n\n【配置项(插件设置)】\n• B站登录Cookie(可选)：填了才能获取AI字幕、导入私有收藏夹、评论完整分页。不填则匿名使用(功能受限)。\n  获取方法：浏览器登录bilibili→F12→Network→点任一api.bilibili.com请求→Request Headers→复制cookie整行值(含SESSDATA)。\n• 专辑名模板(可选)：自定义专辑名格式。不填默认只显示BV号。例：填 {bvid} ({date}) 显示 BV1sb411t7ps (2022-08-18)。\n\n【注意】\n• AI字幕需登录Cookie且视频本身开启AI字幕，不是所有视频都有。\n• 评论完整分页需登录Cookie，匿名只能看少量热门评论。\n• 投币数搜索接口不返回，播放时通过getMusicInfo补全。",
     primaryKey: ["id", "aid", "bvid", "cid"],
     userVariables: [
         {
