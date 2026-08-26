@@ -48,16 +48,16 @@ function isLoggedIn() {
     const c = getUserCookie();
     return /SESSDATA=/.test(c);
 }
-// 读取用户开关：albumWithDuration=1 时，专辑名后追加视频时长 (mm:ss)
-function isAlbumWithDurationEnabled() {
+// 读取用户开关：albumWithDate=1 时，专辑名后追加视频发布日期 (YYYY-MM-DD)
+function isAlbumWithDateEnabled() {
     try {
         const v = env.getUserVariables();
-        return String(v && v.albumWithDuration || "").trim() === "1";
+        return String(v && v.albumWithDate || "").trim() === "1";
     } catch (e) {
         return false;
     }
 }
-// 秒数转 mm:ss（用于专辑名追加时长）
+// 秒数转 mm:ss（保留，其他地方可能用到）
 function secToMmSs(sec) {
     if (typeof sec !== "number" || !isFinite(sec) || sec < 0) sec = 0;
     const m = Math.floor(sec / 60);
@@ -154,12 +154,12 @@ function formatMedia(result) {
     var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k;
     const title = he.decode((_b = (_a = result.title) === null || _a === void 0 ? void 0 : _a.replace(/(\<em(.*?)\>)|(\<\/em\>)/g, "")) !== null && _b !== void 0 ? _b : "");
     const baseAlbum = (_h = result.bvid) !== null && _h !== void 0 ? _h : result.aid;
-    // 用户开关 albumWithDuration=1 时，专辑名后追加时长 (mm:ss)
+    // 用户开关 albumWithDate=1 时，专辑名后追加发布日期 (YYYY-MM-DD)
     let album = baseAlbum;
-    if (isAlbumWithDurationEnabled()) {
-        const durSec = durationToSec(result.duration);
-        if (durSec > 0) {
-            album = `${baseAlbum} (${secToMmSs(durSec)})`;
+    if (isAlbumWithDateEnabled()) {
+        const pubTs = result.pubdate || result.created;
+        if (pubTs) {
+            album = `${baseAlbum} (${dayjs.unix(pubTs).format("YYYY-MM-DD")})`;
         }
     }
     return {
@@ -613,8 +613,8 @@ async function importMusicSheet(urlLike) {
             artwork: _.cover,
             title: _.title,
             artist: (_a = _.upper) === null || _a === void 0 ? void 0 : _a.name,
-            album: isAlbumWithDurationEnabled() && durationToSec(_.duration) > 0
-                ? `${(_.bvid || _.aid)} (${secToMmSs(durationToSec(_.duration))})`
+            album: isAlbumWithDateEnabled() && (_.pubdate || _.ctime || _.fav_time)
+                ? `${(_.bvid || _.aid)} (${dayjs.unix(_.pubdate || _.ctime || _.fav_time).format("YYYY-MM-DD")})`
                 : ((_b = _.bvid) !== null && _b !== void 0 ? _b : _.aid),
             duration: durationToSec(_.duration),
         });
@@ -856,7 +856,7 @@ async function getLyric(musicItem) {
 module.exports = {
     platform: "bilibili",
     appVersion: ">=0.0",
-    version: "0.4.8",
+    version: "0.4.9",
     author: "猫头猫 (cookie+字幕扩展)",
     cacheControl: "no-cache",
     srcUrl: "https://cdn.jsdelivr.net/gh/martin65536/bilibili-musicfree@main/bilibili.js",
@@ -868,9 +868,9 @@ module.exports = {
             hint: "可选。在浏览器登录bilibili后，F12→Network→任一请求→Cookie，复制完整值（含SESSDATA）。填了才能获取AI字幕、导入私有收藏夹等。不填则匿名使用。"
         },
         {
-            key: "albumWithDuration",
-            name: "专辑名追加时长",
-            hint: "可选。设为 1 时，搜索结果/收藏夹导入的专辑名后会追加视频时长，如 BV1sb411t7ps (01:21)。不填或填 0 则不追加。"
+            key: "albumWithDate",
+            name: "专辑名追加发布日期",
+            hint: "可选。设为 1 时，搜索/歌手作品/排行榜/收藏夹导入的专辑名后会追加视频发布日期，如 BV1sb411t7ps (2019-03-26)。不填或填 0 则不追加。"
         }
     ],
     hints: {
