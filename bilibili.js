@@ -48,21 +48,46 @@ function isLoggedIn() {
     const c = getUserCookie();
     return /SESSDATA=/.test(c);
 }
-// 读取用户开关：albumWithDate=1 时，专辑名后追加视频发布日期 (YYYY-MM-DD)
-function isAlbumWithDateEnabled() {
+// 读取用户配置的专辑名模板字符串
+// 默认空 = 只返回 bvid/aid
+// 支持占位符：{bvid} {aid} {date} {duration} {durationMmSs} {artist} {title}
+// 例："{bvid} ({date})" -> "BV1sb411t7ps (2019-03-26)"
+function getAlbumTemplate() {
     try {
         const v = env.getUserVariables();
-        return String(v && v.albumWithDate || "").trim() === "1";
+        return (v && v.albumTemplate && String(v.albumTemplate).trim()) || "";
     } catch (e) {
-        return false;
+        return "";
     }
 }
-// 秒数转 mm:ss（保留，其他地方可能用到）
+// 秒数转 mm:ss（工具函数）
 function secToMmSs(sec) {
     if (typeof sec !== "number" || !isFinite(sec) || sec < 0) sec = 0;
     const m = Math.floor(sec / 60);
     const s = sec - m * 60;
     return `${String(m).padStart(2, "0")}:${String(Math.floor(s)).padStart(2, "0")}`;
+}
+// 按模板生成 album 字符串
+// vars: { bvid, aid, date, duration, durationMmSs, artist, title }
+function renderAlbumTemplate(vars) {
+    const tpl = getAlbumTemplate();
+    if (!tpl) {
+        return vars.bvid || String(vars.aid || "") || "";
+    }
+    let out = tpl;
+    const replacements = {
+        "{bvid}": vars.bvid || "",
+        "{aid}": vars.aid != null ? String(vars.aid) : "",
+        "{date}": vars.date || "",
+        "{duration}": typeof vars.duration === "number" ? String(vars.duration) : "",
+        "{durationMmSs}": typeof vars.duration === "number" ? secToMmSs(vars.duration) : "",
+        "{artist}": vars.artist || "",
+        "{title}": vars.title || "",
+    };
+    for (const [k, v] of Object.entries(replacements)) {
+        out = out.split(k).join(v);
+    }
+    return out.trim();
 }
 async function getCid(bvid, aid) {
     const params = bvid ? { bvid } : { aid };
@@ -153,15 +178,18 @@ async function getFavoriteList(id) {
 function formatMedia(result) {
     var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k;
     const title = he.decode((_b = (_a = result.title) === null || _a === void 0 ? void 0 : _a.replace(/(\<em(.*?)\>)|(\<\/em\>)/g, "")) !== null && _b !== void 0 ? _b : "");
-    const baseAlbum = (_h = result.bvid) !== null && _h !== void 0 ? _h : result.aid;
-    // 用户开关 albumWithDate=1 时，专辑名后追加发布日期 (YYYY-MM-DD)
-    let album = baseAlbum;
-    if (isAlbumWithDateEnabled()) {
-        const pubTs = result.pubdate || result.created;
-        if (pubTs) {
-            album = `${baseAlbum} (${dayjs.unix(pubTs).format("YYYY-MM-DD")})`;
-        }
-    }
+    // 用模板生成 album，默认只返回 bvid/aid
+    const durSec = durationToSec(result.duration);
+    const pubTs = result.pubdate || result.created;
+    const album = renderAlbumTemplate({
+        bvid: result.bvid,
+        aid: result.aid,
+        date: pubTs ? dayjs.unix(pubTs).format("YYYY-MM-DD") : "",
+        duration: durSec,
+        durationMmSs: durSec > 0 ? secToMmSs(durSec) : "",
+        artist: (result.author || (result.owner && result.owner.name) || ""),
+        title: title,
+    });
     return {
         id: (_d = (_c = result.cid) !== null && _c !== void 0 ? _c : result.bvid) !== null && _d !== void 0 ? _d : result.aid,
         aid: result.aid,
@@ -613,9 +641,15 @@ async function importMusicSheet(urlLike) {
             artwork: _.cover,
             title: _.title,
             artist: (_a = _.upper) === null || _a === void 0 ? void 0 : _a.name,
-            album: isAlbumWithDateEnabled() && (_.pubdate || _.ctime || _.fav_time)
-                ? `${(_.bvid || _.aid)} (${dayjs.unix(_.pubdate || _.ctime || _.fav_time).format("YYYY-MM-DD")})`
-                : ((_b = _.bvid) !== null && _b !== void 0 ? _b : _.aid),
+            album: renderAlbumTemplate({
+                bvid: _.bvid,
+                aid: _.aid,
+                date: (_.pubdate || _.ctime || _.fav_time) ? dayjs.unix(_.pubdate || _.ctime || _.fav_time).format("YYYY-MM-DD") : "",
+                duration: durationToSec(_.duration),
+                durationMmSs: durationToSec(_.duration) > 0 ? secToMmSs(durationToSec(_.duration)) : "",
+                artist: (_a = _.upper) === null || _a === void 0 ? void 0 : _a.name,
+                title: _.title,
+            }),
             duration: durationToSec(_.duration),
         });
     });
@@ -856,7 +890,7 @@ async function getLyric(musicItem) {
 module.exports = {
     platform: "bilibili",
     appVersion: ">=0.0",
-    version: "0.4.9",
+    version: "0.5.0",
     author: "猫头猫 (cookie+字幕扩展)",
     cacheControl: "no-cache",
     srcUrl: "https://cdn.jsdelivr.net/gh/martin65536/bilibili-musicfree@main/bilibili.js",
@@ -868,9 +902,9 @@ module.exports = {
             hint: "可选。在浏览器登录bilibili后，F12→Network→任一请求→Cookie，复制完整值（含SESSDATA）。填了才能获取AI字幕、导入私有收藏夹等。不填则匿名使用。"
         },
         {
-            key: "albumWithDate",
-            name: "专辑名追加发布日期",
-            hint: "可选。设为 1 时，搜索/歌手作品/排行榜/收藏夹导入的专辑名后会追加视频发布日期，如 BV1sb411t7ps (2019-03-26)。不填或填 0 则不追加。"
+            key: "albumTemplate",
+            name: "专辑名模板",
+            hint: "可选。自定义专辑名格式，支持占位符：{bvid} {aid} {date} {duration} {durationMmSs} {artist} {title}。默认(不填)只返回BV号。例：填 {bvid} ({date}) 显示 BV1sb411t7ps (2019-03-26)；填 {bvid} {durationMmSs} 显示 BV1sb411t7ps 01:21。"
         }
     ],
     hints: {
