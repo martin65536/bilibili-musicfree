@@ -546,6 +546,33 @@ function formatComment(item) {
         location: ((_e = (_d = item.reply_control) === null || _d === void 0 ? void 0 : _d.location) === null || _e === void 0 ? void 0 : _e.startsWith("IP属地：")) ? item.reply_control.location.slice(5) : undefined
     };
 }
+// 获取视频简介（desc）作为评论首条
+// view 接口返回的 desc 就是 UP 主写的视频简介
+async function getVideoDesc(musicItem) {
+    const aid = musicItem.aid;
+    const bvid = musicItem.bvid;
+    if (!aid && !bvid) return null;
+    try {
+        const cidRes = await getCid(bvid, aid);
+        const desc = cidRes?.data?.desc;
+        if (desc && String(desc).trim()) {
+            return String(desc).trim();
+        }
+        return null;
+    } catch (e) {
+        return null;
+    }
+}
+// 构造一条「视频简介」评论项，插在评论列表最前面
+function buildDescComment(descText, musicItem) {
+    if (!descText) return null;
+    return {
+        id: "__intro__",
+        nickName: "📝 视频简介",
+        comment: descText,
+        avatar: musicItem.artwork || undefined,
+    };
+}
 async function getMusicComments(musicItem, page) {
     var _a, _b;
     const aid = musicItem.aid;
@@ -587,6 +614,22 @@ async function getMusicComments(musicItem, page) {
             comments[i] = formatComment(replies[i]);
             if ((_a = replies[i].replies) === null || _a === void 0 ? void 0 : _a.length) {
                 comments[i].replies = (_b = replies[i]) === null || _b === void 0 ? void 0 : _b.replies.map(formatComment);
+            }
+        }
+        // 仅在第一页，且评论列表不为空时，把视频简介插到最前面
+        // 评论列表为空说明没评论，插简介没意义
+        if (currentPage === 1 && comments.length > 0) {
+            try {
+                const desc = await getVideoDesc(musicItem);
+                if (desc) {
+                    const descComment = buildDescComment(desc, musicItem);
+                    if (descComment) {
+                        comments.unshift(descComment);
+                    }
+                }
+            } catch (e) {
+                // 简介获取失败不影响评论展示
+                console.error("简介插入失败:", e.message);
             }
         }
         // 判断是否最后一页：
@@ -688,10 +731,10 @@ async function getLyric(musicItem) {
 module.exports = {
     platform: "bilibili",
     appVersion: ">=0.0",
-    version: "0.4.1",
+    version: "0.4.2",
     author: "猫头猫 (cookie+字幕扩展)",
     cacheControl: "no-cache",
-    srcUrl: "https://cdn.jsdelivr.net/gh/martin65536/bilibili-musicfree@v0.4.1/bilibili.js",
+    srcUrl: "https://cdn.jsdelivr.net/gh/martin65536/bilibili-musicfree@v0.4.2/bilibili.js",
     primaryKey: ["id", "aid", "bvid", "cid"],
     userVariables: [
         {
