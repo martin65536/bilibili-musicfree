@@ -50,9 +50,23 @@ function getUserCookie() {
 // 拼接最终请求用的 cookie 字符串：用户 cookie 优先，匿名 buvid 作为补充
 // 如果用户填了 cookie，直接用用户的（里面通常已含 buvid3/buvid4/SESSDATA 等）
 // 否则降级用匿名 buvid3/buvid4
+// 关键修复：用户cookie如果缺buvid3（设备指纹），B站会降级返回受限数据
+// （评论只给3条、字幕列表为空等）。这里自动补上匿名buvid3/buvid4
 async function getCookieString() {
     const userCookie = getUserCookie();
     if (userCookie) {
+        // 检查用户cookie是否缺buvid3
+        const hasBuvid3 = /buvid3=/.test(userCookie);
+        if (hasBuvid3) {
+            return userCookie;
+        }
+        // 缺buvid3，自动补匿名buvid3/buvid4
+        await getCookie();
+        if (cookie && cookie.b_3) {
+            console.log("[getCookieString] 用户cookie缺buvid3，自动补全匿名buvid3/buvid4");
+            return userCookie + ";buvid3=" + cookie.b_3 + ";buvid4=" + cookie.b_4;
+        }
+        console.warn("[getCookieString] 用户cookie缺buvid3，且匿名buvid获取失败");
         return userCookie;
     }
     await getCookie();
@@ -1031,7 +1045,7 @@ async function getLyric(musicItem) {
 module.exports = {
     platform: "bilibili",
     appVersion: ">=0.0",
-    version: "0.5.5",
+    version: "0.5.6",
     author: "猫头猫 (cookie+字幕扩展)",
     cacheControl: "no-cache",
     srcUrl: "https://cdn.jsdelivr.net/gh/martin65536/bilibili-musicfree@main/bilibili.js",
