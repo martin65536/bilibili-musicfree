@@ -67,8 +67,17 @@ function secToMmSs(sec) {
     const s = sec - m * 60;
     return `${String(m).padStart(2, "0")}:${String(Math.floor(s)).padStart(2, "0")}`;
 }
+// 数字格式化：13317730 -> "1331.8万"，586240 -> "58.6万"，1234 -> "1234"
+function formatNumber(n) {
+    if (typeof n !== "number" || !isFinite(n)) return "";
+    if (n >= 10000) {
+        return (n / 10000).toFixed(1).replace(/\.0$/, "") + "万";
+    }
+    return String(n);
+}
 // 按模板生成 album 字符串
-// vars: { bvid, aid, date, duration, durationMmSs, artist, title }
+// vars: { bvid, aid, date, duration, durationMmSs, artist, title,
+//         playCount, likeCount, coinCount, favoriteCount, danmakuCount, replyCount, shareCount, category }
 function renderAlbumTemplate(vars) {
     const tpl = getAlbumTemplate();
     if (!tpl) {
@@ -83,6 +92,14 @@ function renderAlbumTemplate(vars) {
         "{durationMmSs}": typeof vars.duration === "number" ? secToMmSs(vars.duration) : "",
         "{artist}": vars.artist || "",
         "{title}": vars.title || "",
+        "{playCount}": typeof vars.playCount === "number" ? formatNumber(vars.playCount) : "",
+        "{likeCount}": typeof vars.likeCount === "number" ? formatNumber(vars.likeCount) : "",
+        "{coinCount}": typeof vars.coinCount === "number" ? formatNumber(vars.coinCount) : "",
+        "{favoriteCount}": typeof vars.favoriteCount === "number" ? formatNumber(vars.favoriteCount) : "",
+        "{danmakuCount}": typeof vars.danmakuCount === "number" ? formatNumber(vars.danmakuCount) : "",
+        "{replyCount}": typeof vars.replyCount === "number" ? formatNumber(vars.replyCount) : "",
+        "{shareCount}": typeof vars.shareCount === "number" ? formatNumber(vars.shareCount) : "",
+        "{category}": vars.category || "",
     };
     for (const [k, v] of Object.entries(replacements)) {
         out = out.split(k).join(v);
@@ -181,20 +198,53 @@ function formatMedia(result) {
     // 用模板生成 album，默认只返回 bvid/aid
     const durSec = durationToSec(result.duration);
     const pubTs = result.pubdate || result.created;
+    const pubDate = pubTs ? dayjs.unix(pubTs).format("YYYY-MM-DD") : "";
+    const artistName = (result.author || (result.owner && result.owner.name) || "");
+    // 统计字段（搜索接口直接返回，无需二次请求）
+    const playCount = typeof result.play === "number" ? result.play : (result.stat ? result.stat.view : undefined);
+    const likeCount = typeof result.like === "number" ? result.like : (result.stat ? result.stat.like : undefined);
+    const danmakuCount = typeof result.video_review === "number" ? result.video_review : (typeof result.danmaku === "number" ? result.danmaku : (result.stat ? result.stat.danmaku : undefined));
+    const replyCount = typeof result.review === "number" ? result.review : (result.stat ? result.stat.reply : undefined);
+    const favoriteCount = typeof result.favorites === "number" ? result.favorites : (result.stat ? result.stat.favorite : undefined);
+    const coinCount = typeof result.coins === "number" ? result.coins : (result.stat ? result.stat.coin : undefined);
+    const shareCount = typeof result.share === "number" ? result.share : (result.stat ? result.stat.share : undefined);
+    const category = result.typename || result.tname || "";
+    // 视频简介：优先 description 字段，其次 desc
+    const rawDesc = (result.description && String(result.description).trim()) || (result.desc && String(result.desc).trim()) || "";
+    // 拼一段介绍：简介 + 统计摘要
+    let descParts = [];
+    if (rawDesc) descParts.push(rawDesc);
+    const statParts = [];
+    if (typeof playCount === "number") statParts.push("播放 " + formatNumber(playCount));
+    if (typeof likeCount === "number") statParts.push("点赞 " + formatNumber(likeCount));
+    if (typeof coinCount === "number") statParts.push("投币 " + formatNumber(coinCount));
+    if (typeof favoriteCount === "number") statParts.push("收藏 " + formatNumber(favoriteCount));
+    if (typeof danmakuCount === "number") statParts.push("弹幕 " + formatNumber(danmakuCount));
+    if (typeof replyCount === "number") statParts.push("评论 " + formatNumber(replyCount));
+    if (statParts.length > 0) descParts.push(statParts.join(" | "));
+    const description = descParts.join("\n");
     const album = renderAlbumTemplate({
         bvid: result.bvid,
         aid: result.aid,
-        date: pubTs ? dayjs.unix(pubTs).format("YYYY-MM-DD") : "",
+        date: pubDate,
         duration: durSec,
         durationMmSs: durSec > 0 ? secToMmSs(durSec) : "",
-        artist: (result.author || (result.owner && result.owner.name) || ""),
+        artist: artistName,
         title: title,
+        playCount: playCount,
+        likeCount: likeCount,
+        coinCount: coinCount,
+        favoriteCount: favoriteCount,
+        danmakuCount: danmakuCount,
+        replyCount: replyCount,
+        shareCount: shareCount,
+        category: category,
     });
-    return {
+    const item = {
         id: (_d = (_c = result.cid) !== null && _c !== void 0 ? _c : result.bvid) !== null && _d !== void 0 ? _d : result.aid,
         aid: result.aid,
         bvid: result.bvid,
-        artist: (_e = result.author) !== null && _e !== void 0 ? _e : (_f = result.owner) === null && _f === void 0 ? void 0 : _f.name,
+        artist: artistName,
         title,
         alias: (_g = title.match(/《(.+?)》/)) === null || _g === void 0 ? void 0 : _g[1],
         album: album,
@@ -202,9 +252,24 @@ function formatMedia(result) {
             ? "http:".concat(result.pic)
             : result.pic,
         duration: durationToSec(result.duration),
-        tags: (_k = result.tag) === null || _k === void 0 ? void 0 : _k.split(","),
-        date: dayjs.unix(result.pubdate || result.created).format("YYYY-MM-DD"),
+        tags: (_k = result.tag) === null && _k === void 0 ? void 0 : _k.split(","),
+        date: pubDate,
+        playCount: playCount,
+        likeCount: likeCount,
+        coinCount: coinCount,
+        favoriteCount: favoriteCount,
+        danmakuCount: danmakuCount,
+        replyCount: replyCount,
+        shareCount: shareCount,
+        category: category,
+        description: description,
+        artistId: result.mid,
+        artistAvatar: result.upic || (result.owner && result.owner.face),
     };
+    Object.keys(item).forEach((key) => {
+        if (item[key] === undefined || item[key] === null) delete item[key];
+    });
+    return item;
 }
 async function searchAlbum(keyword, page) {
     const resultData = await searchBase(keyword, page, "video");
@@ -890,7 +955,7 @@ async function getLyric(musicItem) {
 module.exports = {
     platform: "bilibili",
     appVersion: ">=0.0",
-    version: "0.5.0",
+    version: "0.5.1",
     author: "猫头猫 (cookie+字幕扩展)",
     cacheControl: "no-cache",
     srcUrl: "https://cdn.jsdelivr.net/gh/martin65536/bilibili-musicfree@main/bilibili.js",
@@ -904,7 +969,7 @@ module.exports = {
         {
             key: "albumTemplate",
             name: "专辑名模板",
-            hint: "可选。自定义专辑名格式，支持占位符：{bvid} {aid} {date} {duration} {durationMmSs} {artist} {title}。默认(不填)只返回BV号。例：填 {bvid} ({date}) 显示 BV1sb411t7ps (2019-03-26)；填 {bvid} {durationMmSs} 显示 BV1sb411t7ps 01:21。"
+            hint: "可选。自定义专辑名格式。占位符：{bvid} {aid} {date} {duration} {durationMmSs} {artist} {title} {playCount} {likeCount} {coinCount} {favoriteCount} {danmakuCount} {replyCount} {shareCount} {category}。默认不填只返回BV号。例：{bvid} ({date}) 显示 BV1sb411t7ps (2019-03-26)；{bvid} 播{playCount} 显示 BV1sb411t7ps 播1331.8万。"
         }
     ],
     hints: {
