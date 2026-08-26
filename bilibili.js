@@ -6,11 +6,19 @@ const he = require("he");
 const CryptoJs = require("crypto-js");
 const { load } = require("cheerio");
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36";
+// 请求头对齐 Chrome 浏览器，包括 sec-* 系列
+// axios 会自动加 Accept/Accept-Encoding，必须显式覆盖，否则 B站识别为非浏览器
 const headers = {
     "user-agent": UA,
-    accept: "*/*",
+    "accept": "*/*",
     "accept-encoding": "gzip, deflate, br",
     "accept-language": "zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6",
+    "sec-ch-ua": '"Not A(Brand";v="99", "Chromium";v="121", "Google Chrome";v="121"',
+    "sec-ch-ua-mobile": "?0",
+    "sec-ch-ua-platform": '"Windows"',
+    "sec-fetch-dest": "empty",
+    "sec-fetch-mode": "cors",
+    "sec-fetch-site": "same-site",
 };
 let cookie = null;
 async function getCookie() {
@@ -1059,7 +1067,7 @@ async function getLyric(musicItem) {
 module.exports = {
     platform: "bilibili",
     appVersion: ">=0.0",
-    version: "0.5.9",
+    version: "0.6.0",
     author: "猫头猫 (cookie+字幕扩展)",
     cacheControl: "no-cache",
     srcUrl: "https://cdn.jsdelivr.net/gh/martin65536/bilibili-musicfree@main/bilibili.js",
