@@ -201,7 +201,11 @@ async function getWBIKeys(cookie) {
     if (wbiImg && wbiSub && wbiTime && wbiTime.getDate() === new Date().getDate()) return { img: wbiImg, sub: wbiSub };
     const ts = Math.floor(Date.now() / 1000);
     const hexSign = CryptoJs.HmacSHA256(`ts${ts}`, 'XgwSnGZ1p').toString(CryptoJs.enc.Hex);
-    const r = await fetchBili(buildUrl('https://api.bilibili.com/bapis/bilibili.api.ticket.v1.Ticket/GenWebTicket', { key_id:'ec02', hexsign:hexSign, 'context[ts]':ts, csrf:'' }), { headers: { 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0' } });
+    const r = await fetchBili(buildUrl('https://api.bilibili.com/bapis/bilibili.api.ticket.v1.Ticket/GenWebTicket', { key_id:'ec02', hexsign:hexSign, 'context[ts]':ts, csrf:'' }), { method: 'POST', headers: { 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0' } });
+    if (!r.data || !r.data.nav) {
+        console.error('[getWBIKeys] GenWebTicket返回异常:', JSON.stringify(r).slice(0, 200));
+        throw new Error('GenWebTicket失败 code=' + r.code);
+    }
     wbiImg = r.data.nav.img.slice(r.data.nav.img.lastIndexOf('/') + 1, r.data.nav.img.lastIndexOf('.'));
     wbiSub = r.data.nav.sub.slice(r.data.nav.sub.lastIndexOf('/') + 1, r.data.nav.sub.lastIndexOf('.'));
     wbiTime = new Date();
