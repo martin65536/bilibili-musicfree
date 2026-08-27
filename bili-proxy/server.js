@@ -36,7 +36,7 @@ const HEADERS = {
 
 // ===== 配置持久化 =====
 const CONFIG_FILE = path.join(__dirname, 'config.json');
-let config = { cookie: '', debug: false };
+let config = { cookie: '', debug: false, debugFull: false };
 function loadConfig() {
     try {
         if (fs.existsSync(CONFIG_FILE)) {
@@ -44,6 +44,7 @@ function loadConfig() {
             const parsed = JSON.parse(raw);
             config.cookie = parsed.cookie || '';
             config.debug = !!parsed.debug;
+            config.debugFull = !!parsed.debugFull;
         }
     } catch (e) { console.error('[config] 加载失败:', e.message); }
 }
@@ -68,10 +69,11 @@ function showMenu() {
     console.log('║  2. 查看当前 Cookie                ║');
     console.log('║  3. 清除 Cookie                    ║');
     console.log(`║  4. 调试输出: ${config.debug ? '开 ✓' : '关  '}            ║`);
-    console.log('║  5. 查看当前配置                   ║');
-    console.log('║  6. 退出                           ║');
+    console.log(`║  5. 完整响应输出: ${config.debugFull ? '开 ✓' : '关  '}        ║`);
+    console.log('║  6. 查看当前配置                   ║');
+    console.log('║  7. 退出                           ║');
     console.log('╚════════════════════════════════════╝');
-    rl.question('请选择 [1-6]: ', (choice) => {
+    rl.question('请选择 [1-7]: ', (choice) => {
         menuActive = false;
         handleMenu(choice);
     });
@@ -108,18 +110,29 @@ function handleMenu(choice) {
         case '4':
             config.debug = !config.debug;
             saveConfig();
-            console.log('调试输出已' + (config.debug ? '开启 ✓（将打印所有B站响应）' : '关闭'));
+            console.log('调试输出已' + (config.debug ? '开启 ✓（打印请求URL+响应概要）' : '关闭'));
             showMenu();
             break;
         case '5':
+            config.debugFull = !config.debugFull;
+            if (config.debugFull && !config.debug) {
+                config.debug = true; // 完整输出依赖调试输出
+                console.log('（已自动开启调试输出）');
+            }
+            saveConfig();
+            console.log('完整响应输出已' + (config.debugFull ? '开启 ✓（打印B站完整响应内容，最多2000字符）' : '关闭'));
+            showMenu();
+            break;
+        case '6':
             console.log('当前配置:');
             console.log('  端口:', PORT);
             console.log('  Cookie:', config.cookie ? `已设置(${config.cookie.length}字符)` : '未设置');
             console.log('  调试输出:', config.debug ? '开' : '关');
+            console.log('  完整响应输出:', config.debugFull ? '开' : '关');
             console.log('  配置文件:', CONFIG_FILE);
             showMenu();
             break;
-        case '6':
+        case '7':
             console.log('再见！');
             process.exit(0);
             break;
@@ -178,6 +191,11 @@ async function fetchBili(url, options) {
     if (config.debug) {
         const summary = typeof parsed === 'object' && parsed ? ('code=' + parsed.code + ' keys=' + Object.keys(parsed).slice(0,5).join(',')) : ('非JSON len=' + text.length);
         console.log('  [debug←B站] status=' + resp.status + ' ' + summary + (parsed._raw ? ' raw前80=' + parsed._raw.slice(0,80) : ''));
+        // debugFull 模式：打印完整响应内容（最多 2000 字符）
+        if (config.debugFull) {
+            console.log('  [debugFull←B站] 完整响应:');
+            console.log('  ' + text.slice(0, 2000).split('\n').join('\n  ') + (text.length > 2000 ? '\n  ... (共' + text.length + '字符，仅显示前2000)' : ''));
+        }
     }
     return parsed;
 }
