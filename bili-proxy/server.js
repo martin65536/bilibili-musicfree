@@ -300,7 +300,7 @@ async function getCid(bvid, aid, cookie) {
     return r;
 }
 
-// 3. 专辑详情（多P）
+// 3. 专辑详情（多P/合集）
 async function apiAlbumInfo(query) {
     const bvid = query.bvid;
     const aid = query.aid;
@@ -308,9 +308,20 @@ async function apiAlbumInfo(query) {
     const cidRes = await getCid(bvid, aid, cookie);
     const d = cidRes.data;
     if (!d) return { musicList: [] };
+    // 父级字段，每个分P继承
+    const base = {
+        aid: d.aid,
+        bvid: d.bvid,
+        artist: d.owner && d.owner.name || '',
+        artwork: formatArtwork(d.pic),
+        album: d.bvid || d.aid,
+    };
     const pages = d.pages || [];
-    if (pages.length === 1) return { musicList: [{ cid: d.cid }] };
-    return { musicList: pages.map(p => ({ cid: p.cid, title: p.part, duration: durationToSec(p.duration), id: p.cid })) };
+    if (pages.length <= 1) {
+        return { musicList: [Object.assign({}, base, { id: d.cid, cid: d.cid, title: d.title, duration: d.duration })] };
+    }
+    // 多P：每个分P继承父级字段
+    return { musicList: pages.map(p => Object.assign({}, base, { cid: p.cid, id: p.cid, title: p.part, duration: durationToSec(p.duration) })) };
 }
 
 // 4. 播放链接
