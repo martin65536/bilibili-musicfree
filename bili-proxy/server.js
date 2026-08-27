@@ -464,7 +464,7 @@ async function apiArtistWorks(query) {
     const page = parseInt(query.page || '1');
     const cookie = config.cookie || query.cookie || await getAnonCookie();
     const now = Math.round(Date.now() / 1e3);
-    const params = { mid, ps:30, tid:0, pn:page, index:0, special_type:'', web_location:'333.1387', order_avoided:true, order:'pubdate', keyword:'', platform:'web', dm_img_list:'[]', dm_img_str:'V2ViR0wgMS4wIChPcGVuR0wgRVMgMi4wIENocm9taXVtKQ', dm_cover_img_str:'QU5HTEUgKE5WSURJQS', dm_img_inter:'{"ds":[],"wh":[4564,4288,68],"of":[401,802,401]}', wts: now.toString() };
+    const params = { mid, ps:30, tid:0, pn:page, index:0, special_type:'', web_location:'333.1387', order_avoided:true, order:'pubdate', keyword:'', platform:'web', dm_img_list:'[]', dm_img_str:'V2ViR0wgMS4wIChPcGVuR0wgRVMgMi4wIENocm9taXVtKQ', dm_cover_img_str:'TWFsaS1HNzcgTUM5QV', dm_img_inter:'{"ds":[],"wh":[7802,2344,18],"of":[117,234,117]}', wts: now.toString() };
     const w_rid = await getRid(params, cookie);
     params.w_rid = w_rid;
     const r = await fetchBili(buildUrl('https://api.bilibili.com/x/space/wbi/arc/search', params), { headers: { cookie, origin:'https://space.bilibili.com', referer:'https://space.bilibili.com/' + mid + '/video' } });
