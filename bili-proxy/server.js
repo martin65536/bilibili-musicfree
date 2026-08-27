@@ -2,8 +2,19 @@
 // 重心全在服务端：直接请求B站、格式化数据
 // MusicFree 插件只发简单 GET 请求调用这里的业务接口
 // 运行：node server.js  （端口默认 3000，可用 PORT 环境变量改）
+//
+// 控制台交互：运行后按回车显示菜单
+//   1. 设置/修改 Cookie
+//   2. 查看当前 Cookie
+//   3. 清除 Cookie
+//   4. 开关调试输出（打印所有B站响应）
+//   5. 查看当前配置
+//   6. 退出
 
 const http = require('http');
+const fs = require('fs');
+const path = require('path');
+const readline = require('readline');
 const dayjs = require('dayjs');
 const he = require('he');
 const CryptoJs = require('crypto-js');
@@ -22,6 +33,102 @@ const HEADERS = {
     'sec-fetch-mode': 'cors',
     'sec-fetch-site': 'same-site',
 };
+
+// ===== 配置持久化 =====
+const CONFIG_FILE = path.join(__dirname, 'config.json');
+let config = { cookie: '', debug: false };
+function loadConfig() {
+    try {
+        if (fs.existsSync(CONFIG_FILE)) {
+            const raw = fs.readFileSync(CONFIG_FILE, 'utf-8');
+            const parsed = JSON.parse(raw);
+            config.cookie = parsed.cookie || '';
+            config.debug = !!parsed.debug;
+        }
+    } catch (e) { console.error('[config] 加载失败:', e.message); }
+}
+function saveConfig() {
+    try {
+        fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), 'utf-8');
+    } catch (e) { console.error('[config] 保存失败:', e.message); }
+}
+loadConfig();
+
+// ===== 控制台交互 =====
+const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+let menuActive = false;
+function showMenu() {
+    if (menuActive) return;
+    if (rl.closed) return;
+    menuActive = true;
+    console.log('\n╔════════════════════════════════════╗');
+    console.log('║     B站代理服务端 - 设置菜单       ║');
+    console.log('╠════════════════════════════════════╣');
+    console.log('║  1. 设置/修改 Cookie               ║');
+    console.log('║  2. 查看当前 Cookie                ║');
+    console.log('║  3. 清除 Cookie                    ║');
+    console.log(`║  4. 调试输出: ${config.debug ? '开 ✓' : '关  '}            ║`);
+    console.log('║  5. 查看当前配置                   ║');
+    console.log('║  6. 退出                           ║');
+    console.log('╚════════════════════════════════════╝');
+    rl.question('请选择 [1-6]: ', (choice) => {
+        menuActive = false;
+        handleMenu(choice);
+    });
+}
+function handleMenu(choice) {
+    switch (String(choice).trim()) {
+        case '1':
+            rl.question('请粘贴B站Cookie（含SESSDATA，一行）:\n', (val) => {
+                config.cookie = String(val).trim();
+                saveConfig();
+                const hasSess = /SESSDATA=/.test(config.cookie);
+                console.log(hasSess ? '✅ Cookie已保存（含SESSDATA）' : '⚠️ Cookie已保存，但未检测到SESSDATA');
+                showMenu();
+            });
+            break;
+        case '2':
+            if (config.cookie) {
+                const c = config.cookie;
+                console.log('当前Cookie长度:', c.length);
+                console.log('含SESSDATA:', /SESSDATA=/.test(c));
+                console.log('含bili_jct:', /bili_jct=/.test(c));
+                console.log('含buvid3:', /buvid3=/.test(c));
+                console.log('含DedeUserID:', /DedeUserID=/.test(c));
+                console.log('前80字符:', c.slice(0, 80) + '...');
+            } else { console.log('当前未设置Cookie'); }
+            showMenu();
+            break;
+        case '3':
+            config.cookie = '';
+            saveConfig();
+            console.log('✅ Cookie已清除');
+            showMenu();
+            break;
+        case '4':
+            config.debug = !config.debug;
+            saveConfig();
+            console.log('调试输出已' + (config.debug ? '开启 ✓（将打印所有B站响应）' : '关闭'));
+            showMenu();
+            break;
+        case '5':
+            console.log('当前配置:');
+            console.log('  端口:', PORT);
+            console.log('  Cookie:', config.cookie ? `已设置(${config.cookie.length}字符)` : '未设置');
+            console.log('  调试输出:', config.debug ? '开' : '关');
+            console.log('  配置文件:', CONFIG_FILE);
+            showMenu();
+            break;
+        case '6':
+            console.log('再见！');
+            process.exit(0);
+            break;
+        default:
+            showMenu();
+    }
+}
+// 启动后 2 秒自动显示菜单
+setTimeout(() => { if (!menuActive) showMenu(); }, 2000);
 
 // ===== 工具函数 =====
 function durationToSec(duration) {
@@ -63,9 +170,16 @@ async function fetchBili(url, options) {
     const opts = options || {};
     // opts.headers 优先于 HEADERS（覆盖 cookie/referer 等）
     const headers = Object.assign({}, HEADERS, opts.headers || {});
+    if (config.debug) console.log('  [debug→B站] ' + (opts.method || 'GET') + ' ' + url.slice(0, 120));
     const resp = await fetch(url, { headers, method: opts.method || 'GET' });
     const text = await resp.text();
-    try { return JSON.parse(text); } catch (e) { return { _raw: text, _status: resp.status }; }
+    let parsed;
+    try { parsed = JSON.parse(text); } catch (e) { parsed = { _raw: text, _status: resp.status }; }
+    if (config.debug) {
+        const summary = typeof parsed === 'object' && parsed ? ('code=' + parsed.code + ' keys=' + Object.keys(parsed).slice(0,5).join(',')) : ('非JSON len=' + text.length);
+        console.log('  [debug←B站] status=' + resp.status + ' ' + summary + (parsed._raw ? ' raw前80=' + parsed._raw.slice(0,80) : ''));
+    }
+    return parsed;
 }
 // 拼接带参数的 URL
 function buildUrl(base, params) {
@@ -114,7 +228,7 @@ async function apiSearch(query) {
     const keyword = query.keyword;
     const page = parseInt(query.page || '1');
     const type = query.type || 'music';
-    const cookie = query.cookie || await getAnonCookie();
+    const cookie = config.cookie || query.cookie || await getAnonCookie();
     const searchType = (type === 'album' || type === 'music') ? 'video' : 'bili_user';
     const params = { context:'', page, order:'', page_size:20, keyword, duration:'', tids_1:'', tids_2:'', __refresh__:true, _extra:'', highlight:1, single_column:0, platform:'pc', from_source:'', search_type:searchType, dynamic_offset:0 };
     const r = await fetchBili(buildUrl('https://api.bilibili.com/x/web-interface/search/type', params), {
@@ -168,7 +282,7 @@ async function getCid(bvid, aid, cookie) {
 async function apiAlbumInfo(query) {
     const bvid = query.bvid;
     const aid = query.aid;
-    const cookie = query.cookie || await getAnonCookie();
+    const cookie = config.cookie || query.cookie || await getAnonCookie();
     const cidRes = await getCid(bvid, aid, cookie);
     const d = cidRes.data;
     if (!d) return { musicList: [] };
@@ -183,7 +297,7 @@ async function apiMediaSource(query) {
     const aid = query.aid;
     const cid = query.cid;
     const quality = query.quality || 'standard';
-    const cookie = query.cookie || await getAnonCookie();
+    const cookie = config.cookie || query.cookie || await getAnonCookie();
     let realCid = cid;
     if (!realCid) {
         const cidRes = await getCid(bvid, aid, cookie);
@@ -211,7 +325,7 @@ async function apiMediaSource(query) {
 async function apiMusicInfo(query) {
     const bvid = query.bvid;
     const aid = query.aid;
-    const cookie = query.cookie || await getAnonCookie();
+    const cookie = config.cookie || query.cookie || await getAnonCookie();
     const cidRes = await getCid(bvid, aid, cookie);
     const d = cidRes.data;
     if (!d) return {};
@@ -238,7 +352,7 @@ const commentCursor = new Map(); // aid -> next
 async function apiComments(query) {
     const aid = query.aid;
     const page = parseInt(query.page || '1');
-    const cookie = query.cookie || await getAnonCookie();
+    const cookie = config.cookie || query.cookie || await getAnonCookie();
     const next = page === 1 ? 0 : (commentCursor.get(String(aid)) || 0);
     const params = { type:1, oid:aid, mode:3, next, ps:30, plat:1, web_location:1315875, wts:Math.floor(Date.now()/1000) };
     const r = await fetchBili(buildUrl('https://api.bilibili.com/x/v2/reply/main', params), { headers: { cookie, referer:'https://www.bilibili.com/' } });
@@ -268,7 +382,7 @@ async function apiLyric(query) {
     const bvid = query.bvid;
     const aid = query.aid;
     const cid = query.cid;
-    const cookie = query.cookie;
+    const cookie = config.cookie || query.cookie;
     if (!cookie || !/SESSDATA=/.test(cookie)) return {}; // 未登录不获取
     let realCid = cid;
     if (!realCid) {
@@ -308,7 +422,7 @@ async function apiLyric(query) {
 
 // 8. 排行榜
 async function apiTopLists(query) {
-    const cookie = query.cookie || await getAnonCookie();
+    const cookie = config.cookie || query.cookie || await getAnonCookie();
     const weeklyRes = await fetchBili('https://api.bilibili.com/x/web-interface/popular/series/list', { headers: { cookie, referer:'https://www.bilibili.com/' } });
     const weekly = { title: '每周必看', data: (weeklyRes.data.list || []).slice(0, 8).map(e => ({ id: 'popular/series/one?number=' + e.number, title: e.subject, description: e.name, coverImg: 'https://s1.hdslb.com/bfs/static/jinkela/popular/assets/icon_weekly.png' })) };
     const precious = { title: '入站必刷', data: [{ id: 'popular/precious?page_size=100&page=1', title: '入站必刷', coverImg: 'https://s1.hdslb.com/bfs/static/jinkela/popular/assets/icon_history.png' }] };
@@ -317,7 +431,7 @@ async function apiTopLists(query) {
     return [weekly, precious, board];
 }
 async function apiTopListDetail(query) {
-    const cookie = query.cookie || await getAnonCookie();
+    const cookie = config.cookie || query.cookie || await getAnonCookie();
     const r = await fetchBili('https://api.bilibili.com/x/web-interface/' + query.id, { headers: { cookie, referer:'https://www.bilibili.com/' } });
     return { musicList: ((r.data && r.data.list) || []).map(formatMedia) };
 }
@@ -326,7 +440,7 @@ async function apiTopListDetail(query) {
 async function apiArtistWorks(query) {
     const mid = query.mid;
     const page = parseInt(query.page || '1');
-    const cookie = query.cookie || await getAnonCookie();
+    const cookie = config.cookie || query.cookie || await getAnonCookie();
     const now = Math.round(Date.now() / 1e3);
     const params = { mid, ps:30, tid:0, pn:page, index:0, special_type:'', web_location:'333.1387', order_avoided:true, order:'pubdate', keyword:'', platform:'web', dm_img_list:'[]', dm_img_str:'V2ViR0wgMS4wIChPcGVuR0wgRVMgMi4wIENocm9taXVtKQ', dm_cover_img_str:'QU5HTEUgKE5WSURJQS', dm_img_inter:'{"ds":[],"wh":[4564,4288,68],"of":[401,802,401]}', wts: now.toString() };
     const w_rid = await getRid(params, cookie);
@@ -339,7 +453,7 @@ async function apiArtistWorks(query) {
 // 10. 导入收藏夹
 async function apiImportSheet(query) {
     const id = query.id;
-    const cookie = query.cookie || await getAnonCookie();
+    const cookie = config.cookie || query.cookie || await getAnonCookie();
     const result = [];
     let page = 1;
     while (true) {
