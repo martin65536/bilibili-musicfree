@@ -19,7 +19,7 @@ async function proxy(path, params) {
 
 module.exports = {
     platform: "bilibili-proxy",
-    version: "0.7.1",
+    version: "0.7.2",
     author: "猫头猫 (代理壳版)",
     cacheControl: "no-cache",
     srcUrl: "https://cdn.jsdelivr.net/gh/martin65536/bilibili-musicfree@main/bilibili-proxy.js",
@@ -41,7 +41,9 @@ module.exports = {
     },
     async getAlbumInfo(albumItem) {
         const r = await proxy('/albumInfo', { bvid: albumItem.bvid, aid: albumItem.aid });
-        return { musicList: r.musicList || [] };
+        // 合并父级 albumItem 的字段（包括 platform，MusicFree 自动注入的）
+        const musicList = (r.musicList || []).map(m => Object.assign({}, albumItem, m));
+        return { musicList };
     },
     async getArtistWorks(artistItem, page) {
         return proxy('/artistWorks', { mid: artistItem.id, page });
