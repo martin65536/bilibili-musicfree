@@ -8,9 +8,6 @@ async function proxy(path, params) {
     const base = (env.getUserVariables().proxyUrl || '').replace(/\/$/, '');
     if (!base) throw new Error('未配置proxyUrl，请在插件设置填Termux服务端地址(如http://localhost:3000)');
     const qs = new URLSearchParams();
-    // 注入 cookie
-    const userCookie = (env.getUserVariables().cookie || '').trim();
-    if (userCookie) qs.append('cookie', userCookie);
     for (const [k, v] of Object.entries(params || {})) {
         if (v !== undefined && v !== null) qs.append(k, String(v));
     }
@@ -22,15 +19,14 @@ async function proxy(path, params) {
 
 module.exports = {
     platform: "bilibili-proxy",
-    version: "0.7.0",
+    version: "0.7.1",
     author: "猫头猫 (代理壳版)",
     cacheControl: "no-cache",
     srcUrl: "https://cdn.jsdelivr.net/gh/martin65536/bilibili-musicfree@main/bilibili-proxy.js",
-    description: "B站插件(代理壳版)。需配合Termux服务端使用：在Termux运行server.js，插件设置填proxyUrl=http://localhost:3000。所有B站请求走Termux代理，绕开MusicFree沙箱网络限制。\n\n【使用步骤】\n1. Termux安装Node.js：pkg install nodejs\n2. 下载server.js：curl -O https://raw.githubusercontent.com/martin65536/bilibili-musicfree/main/bili-proxy/server.js\n3. 安装依赖：npm install dayjs he crypto-js\n4. 运行：node server.js\n5. MusicFree装本插件，设置proxyUrl=http://localhost:3000\n6. 可选：填B站cookie获取字幕/评论分页等登录功能\n\n【配置项】\n• proxyUrl(必填)：Termux服务端地址，如 http://localhost:3000\n• cookie(可选)：B站登录Cookie，含SESSDATA，用于字幕/评论分页",
+    description: "B站插件(代理壳版)。需配合Termux服务端使用。Cookie在服务端控制台设置，不用填插件里。\n\n【使用步骤】\n1. Termux安装Node.js：pkg install nodejs\n2. 下载server.js：curl -O https://raw.githubusercontent.com/martin65536/bilibili-musicfree/main/bili-proxy/server.js\n3. 安装依赖：npm install dayjs he crypto-js\n4. 运行：node server.js\n5. 在服务端控制台菜单选1设置B站Cookie（字幕/评论分页需要）\n6. MusicFree装本插件，设置proxyUrl=http://localhost:3000\n\n【配置项】\n• proxyUrl(必填)：Termux服务端地址，如 http://localhost:3000\n• Cookie：在服务端控制台设置，不用填插件\n\n【服务端调试】\n在服务端控制台按回车显示菜单，选4开关调试输出（打印所有B站响应）",
     primaryKey: ["id", "aid", "bvid", "cid"],
     userVariables: [
-        { key: "proxyUrl", name: "代理服务端地址", hint: "必填。Termux运行server.js后的地址，如 http://localhost:3000" },
-        { key: "cookie", name: "B站登录Cookie", hint: "可选。含SESSDATA，用于字幕/评论分页。不填则匿名。" }
+        { key: "proxyUrl", name: "代理服务端地址", hint: "必填。Termux运行server.js后的地址，如 http://localhost:3000" }
     ],
     supportedSearchType: ["music", "album", "artist"],
     hints: {
