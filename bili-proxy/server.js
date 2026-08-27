@@ -468,7 +468,25 @@ async function apiArtistWorks(query) {
     const w_rid = await getRid(params, cookie);
     params.w_rid = w_rid;
     const r = await fetchBili(buildUrl('https://api.bilibili.com/x/space/wbi/arc/search', params), { headers: { cookie, origin:'https://space.bilibili.com', referer:'https://space.bilibili.com/' + mid + '/video' } });
-    if (r.code !== 0 || !r.data || !r.data.list) return { isEnd: true, data: [] };
+    // wbi 签名失败时（-403/-352），降级用搜索接口
+    if (r.code !== 0 || !r.data || !r.data.list) {
+        console.log('[artistWorks] wbi接口失败 code=' + r.code + '，降级用搜索');
+        // 先拿 UP 主名字
+        let uname = '';
+        try {
+            const infoUrl = buildUrl('https://api.bilibili.com/x/space/acc/info', { mid });
+            const info = await fetchBili(infoUrl, { headers: { cookie, referer: 'https://space.bilibili.com/' + mid } });
+            uname = info.data && info.data.name || '';
+        } catch (e) {}
+        if (!uname) return { isEnd: true, data: [] };
+        // 搜索该 UP 主的视频
+        const searchParams = { context:'', page, order:'', page_size:30, keyword:uname, duration:'', tids_1:'', tids_2:'', __refresh__:true, _extra:'', highlight:1, single_column:0, platform:'pc', from_source:'', search_type:'video', dynamic_offset:0 };
+        const sr = await fetchBili(buildUrl('https://api.bilibili.com/x/web-interface/search/type', searchParams), { headers: { cookie, origin:'https://search.bilibili.com', referer:'https://search.bilibili.com/', accept:'application/json, text/plain, */*' } });
+        if (sr.code !== 0 || !sr.data || !sr.data.result) return { isEnd: true, data: [] };
+        // 过滤出该 UP 主自己的视频
+        const list = sr.data.result.filter(v => String(v.mid) === String(mid));
+        return { isEnd: sr.data.numResults <= page * 30, data: list.map(formatMedia) };
+    }
     return { isEnd: r.data.page.pn * r.data.page.ps >= r.data.page.count, data: r.data.list.vlist.map(formatMedia) };
 }
 
