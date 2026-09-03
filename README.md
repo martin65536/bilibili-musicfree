@@ -79,6 +79,31 @@ node server.js
 监听: http://localhost:3000
 ```
 
+**Termux 使用技巧**：
+
+```bash
+# 修改端口（默认3000，被占用时）
+PORT=8080 node server.js
+
+# 后台运行（防止关闭Termux后停止）
+nohup node server.js > proxy.log 2>&1 &
+
+# 用 tmux（推荐，可断开重连）
+pkg install tmux
+tmux
+node server.js
+# 按 Ctrl+B 然后按 D 断开（服务继续跑）
+# 重新连接: tmux attach
+
+# 防止息屏杀死（保持Termux前台或加锁）
+termux-wake-lock
+
+# 开机自启（可选）
+echo "node ~/server.js &" >> ~/.bashrc
+```
+
+**服务端控制台菜单**：运行后 2 秒自动显示，可设置 Cookie、开关调试输出等。
+
 #### 2. 配置 Cookie（可选，但推荐）
 
 服务端启动后，2 秒自动显示菜单：
