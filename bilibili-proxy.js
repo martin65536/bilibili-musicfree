@@ -19,7 +19,7 @@ async function proxy(path, params) {
 
 module.exports = {
     platform: "bilibili-proxy",
-    version: "0.7.5",
+    version: "0.7.6",
     author: "猫头猫 (代理壳版)",
     cacheControl: "no-cache",
     srcUrl: "https://cdn.jsdelivr.net/gh/martin65536/bilibili-musicfree@main/bilibili-proxy.js",
@@ -51,15 +51,10 @@ module.exports = {
     },
     async getAlbumInfo(albumItem) {
         const r = await proxy('/albumInfo', { bvid: albumItem.bvid, aid: albumItem.aid });
-        // 每个子项用服务端返回的独立字段（title是各P自己的）
-        // 确保 bvid/aid 存在（从 albumItem 补，避免播放时缺失）
-        const bvid = albumItem.bvid;
-        const aid = albumItem.aid;
-        const musicList = (r.musicList || []).map(m => Object.assign({
-            platform: "bilibili-proxy",
-            bvid: bvid,  // 确保子项有 bvid（播放需要）
-            aid: aid,    // 确保子项有 aid
-        }, m));
+        // 参照原版 maotoumao：Object.assign({}, albumItem, m) 继承父级所有字段
+        // 这样 bvid/aid/platform 等都会被 MusicFree 保留，播放时不会丢失
+        // m 里的 title/cid/id 会覆盖 albumItem 的（各P自己的标题）
+        const musicList = (r.musicList || []).map(m => Object.assign({}, albumItem, m));
         return { musicList };
     },
     async getArtistWorks(artistItem, page) {
