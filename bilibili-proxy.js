@@ -19,7 +19,7 @@ async function proxy(path, params) {
 
 module.exports = {
     platform: "bilibili-proxy",
-    version: "0.7.3",
+    version: "0.7.4",
     author: "猫头猫 (代理壳版)",
     cacheControl: "no-cache",
     srcUrl: "https://cdn.jsdelivr.net/gh/martin65536/bilibili-musicfree@main/bilibili-proxy.js",
@@ -38,6 +38,7 @@ module.exports = {
         return proxy('/search', { keyword, page, type });
     },
     async getMediaSource(musicItem, quality) {
+        console.log("[getMediaSource] musicItem:", JSON.stringify({id: musicItem.id, aid: musicItem.aid, bvid: musicItem.bvid, cid: musicItem.cid}));
         const r = await proxy('/mediaSource', { bvid: musicItem.bvid, aid: musicItem.aid, cid: musicItem.cid, quality });
         // 播放历史补全：开启时异步调 getMusicInfo 补全信息（不阻塞播放）
         try {
@@ -51,9 +52,14 @@ module.exports = {
     async getAlbumInfo(albumItem) {
         const r = await proxy('/albumInfo', { bvid: albumItem.bvid, aid: albumItem.aid });
         // 每个子项用服务端返回的独立字段（title是各P自己的）
-        // 参考喜马拉雅：musicList 每项是独立完整的 musicItem
-        // 手动补 platform（getAlbumInfo 子项不一定自动注入）
-        const musicList = (r.musicList || []).map(m => Object.assign({ platform: "bilibili-proxy" }, m));
+        // 确保 bvid/aid 存在（从 albumItem 补，避免播放时缺失）
+        const bvid = albumItem.bvid;
+        const aid = albumItem.aid;
+        const musicList = (r.musicList || []).map(m => Object.assign({
+            platform: "bilibili-proxy",
+            bvid: bvid,  // 确保子项有 bvid（播放需要）
+            aid: aid,    // 确保子项有 aid
+        }, m));
         return { musicList };
     },
     async getArtistWorks(artistItem, page) {
