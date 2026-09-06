@@ -3,6 +3,26 @@
 // 极简壳：所有业务逻辑在 Termux 服务端，插件只发 GET 请求
 // 配置 proxyUrl 指向服务端（如 http://localhost:3000）
 
+// 从 musicItem 提取 bvid/aid/cid
+// MusicFree 播放合集子项时只保留 id（丢失 bvid/aid），所以 getAlbumInfo 把 bvid|aid|cid 编码进 id
+// 这里从 id 解析还原
+function extractIds(musicItem) {
+    let bvid = musicItem.bvid;
+    let aid = musicItem.aid;
+    let cid = musicItem.cid;
+    // 如果 bvid/aid 缺失，尝试从 id 解析（格式: bvid|aid|cid）
+    const idStr = musicItem.id != null ? String(musicItem.id) : '';
+    if (idStr.includes('|')) {
+        const parts = idStr.split('|');
+        if (parts.length >= 3) {
+            if (!bvid || bvid === 'undefined') bvid = parts[0] || undefined;
+            if (!aid || aid === 'undefined') aid = parts[1] || undefined;
+            if (!cid || cid === 'undefined') cid = parts[2] || undefined;
+        }
+    }
+    return { bvid, aid, cid };
+}
+
 // 通过代理服务端请求
 async function proxy(path, params) {
     const base = (env.getUserVariables().proxyUrl || '').replace(/\/$/, '');
@@ -19,7 +39,7 @@ async function proxy(path, params) {
 
 module.exports = {
     platform: "bilibili-proxy",
-    version: "0.7.6",
+    version: "0.7.7",
     author: "猫头猫 (代理壳版)",
     cacheControl: "no-cache",
     srcUrl: "https://cdn.jsdelivr.net/gh/martin65536/bilibili-musicfree@main/bilibili-proxy.js",
@@ -38,23 +58,25 @@ module.exports = {
         return proxy('/search', { keyword, page, type });
     },
     async getMediaSource(musicItem, quality) {
-        console.log("[getMediaSource] musicItem:", JSON.stringify({id: musicItem.id, aid: musicItem.aid, bvid: musicItem.bvid, cid: musicItem.cid}));
-        const r = await proxy('/mediaSource', { bvid: musicItem.bvid, aid: musicItem.aid, cid: musicItem.cid, quality });
+        const ids = extractIds(musicItem);
+        const r = await proxy('/mediaSource', { bvid: ids.bvid, aid: ids.aid, cid: ids.cid, quality });
         // 播放历史补全：开启时异步调 getMusicInfo 补全信息（不阻塞播放）
         try {
             const v = env.getUserVariables();
             if (String(v && v.recordHistory || "").trim() === "1") {
-                proxy('/musicInfo', { bvid: musicItem.bvid, aid: musicItem.aid }).catch(() => {});
+                proxy('/musicInfo', { bvid: ids.bvid, aid: ids.aid }).catch(() => {});
             }
         } catch (e) {}
         return r;
     },
     async getAlbumInfo(albumItem) {
         const r = await proxy('/albumInfo', { bvid: albumItem.bvid, aid: albumItem.aid });
-        // 参照原版 maotoumao：Object.assign({}, albumItem, m) 继承父级所有字段
-        // 这样 bvid/aid/platform 等都会被 MusicFree 保留，播放时不会丢失
-        // m 里的 title/cid/id 会覆盖 albumItem 的（各P自己的标题）
-        const musicList = (r.musicList || []).map(m => Object.assign({}, albumItem, m));
+        // 把 bvid|aid|cid 编码进 id，防止 MusicFree 丢失 bvid/aid
+        const bvid = albumItem.bvid;
+        const aid = albumItem.aid;
+        const musicList = (r.musicList || []).map(m => Object.assign({}, albumItem, m, {
+            id: bvid + '|' + aid + '|' + (m.cid || ''),
+        }));
         return { musicList };
     },
     async getArtistWorks(artistItem, page) {
@@ -76,12 +98,15 @@ module.exports = {
         return proxy('/importSheet', { id });
     },
     async getMusicComments(musicItem, page) {
-        return proxy('/comments', { aid: musicItem.aid, bvid: musicItem.bvid, page });
+        const ids = extractIds(musicItem);
+        return proxy('/comments', { aid: ids.aid, bvid: ids.bvid, page });
     },
     async getLyric(musicItem) {
-        return proxy('/lyric', { bvid: musicItem.bvid, aid: musicItem.aid, cid: musicItem.cid });
+        const ids = extractIds(musicItem);
+        return proxy('/lyric', { bvid: ids.bvid, aid: ids.aid, cid: ids.cid });
     },
     async getMusicInfo(musicItem) {
-        return proxy('/musicInfo', { bvid: musicItem.bvid, aid: musicItem.aid });
+        const ids = extractIds(musicItem);
+        return proxy('/musicInfo', { bvid: ids.bvid, aid: ids.aid });
     },
 };
