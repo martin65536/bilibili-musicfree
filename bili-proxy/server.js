@@ -308,6 +308,7 @@ async function apiAlbumInfo(query) {
     const cidRes = await getCid(bvid, aid, cookie);
     const d = cidRes.data;
     if (!d) return { musicList: [] };
+    console.log('[albumInfo] aid=' + d.aid + ' bvid=' + d.bvid + ' pages=' + (d.pages||[]).length);
     // 父级字段，每个分P继承
     const base = {
         aid: d.aid,
