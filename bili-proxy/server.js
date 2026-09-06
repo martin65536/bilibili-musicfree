@@ -300,6 +300,15 @@ async function getCid(bvid, aid, cookie) {
     return r;
 }
 
+// cid → bvid/aid 映射缓存（getAlbumInfo 时存，getMediaSource 时查）
+const cidCache = new Map();
+function cacheCid(cid, bvid, aid) {
+    if (cid && (bvid || aid)) cidCache.set(String(cid), { bvid, aid });
+}
+function lookupCid(cid) {
+    return cidCache.get(String(cid));
+}
+
 // 3. 专辑详情（多P/合集）
 async function apiAlbumInfo(query) {
     const bvid = query.bvid;
@@ -309,6 +318,11 @@ async function apiAlbumInfo(query) {
     const d = cidRes.data;
     if (!d) return { musicList: [] };
     console.log('[albumInfo] aid=' + d.aid + ' bvid=' + d.bvid + ' pages=' + (d.pages||[]).length);
+    // 缓存每个分P的 cid→bvid/aid 映射
+    if (d.pages) {
+        d.pages.forEach(p => cacheCid(p.cid, d.bvid, d.aid));
+    }
+    cacheCid(d.cid, d.bvid, d.aid);
     // 父级字段，每个分P继承
     const base = {
         aid: d.aid,
@@ -327,17 +341,27 @@ async function apiAlbumInfo(query) {
 
 // 4. 播放链接
 async function apiMediaSource(query) {
-    const bvid = query.bvid;
-    const aid = query.aid;
+    let bvid = query.bvid;
+    let aid = query.aid;
     const cid = query.cid;
     const quality = query.quality || 'standard';
     const cookie = config.cookie || query.cookie || await getAnonCookie();
+    // bvid/aid 缺失时，用 cid 查缓存（getAlbumInfo 时存的）
+    if ((!bvid || bvid === 'undefined') && (!aid || aid === 'undefined') && cid) {
+        const cached = lookupCid(cid);
+        if (cached) {
+            bvid = cached.bvid;
+            aid = cached.aid;
+            console.log('[mediaSource] 用cid缓存反查: cid=' + cid + ' → bvid=' + bvid + ' aid=' + aid);
+        }
+    }
     let realCid = cid;
     if (!realCid) {
         const cidRes = await getCid(bvid, aid, cookie);
         realCid = cidRes.data && cidRes.data.cid;
     }
     if (!realCid) throw new Error('无法获取cid');
+    if (!bvid && !aid) throw new Error('缺少bvid/aid，且cid=' + realCid + '无缓存');
     const params = Object.assign(bvid ? { bvid } : { aid }, { cid: realCid, fnval: 16 });
     const r = await fetchBili(buildUrl('https://api.bilibili.com/x/player/playurl', params), { headers: { referer: 'https://www.bilibili.com/video/' + (bvid || aid) } });
     if (r.code !== 0) throw new Error('playurl错误 code=' + r.code);
@@ -413,11 +437,16 @@ async function apiComments(query) {
 
 // 7. 字幕（歌词）
 async function apiLyric(query) {
-    const bvid = query.bvid;
-    const aid = query.aid;
+    let bvid = query.bvid;
+    let aid = query.aid;
     const cid = query.cid;
     const cookie = config.cookie || query.cookie;
     if (!cookie || !/SESSDATA=/.test(cookie)) return {}; // 未登录不获取
+    // bvid/aid 缺失时，用 cid 查缓存
+    if ((!bvid || bvid === 'undefined') && (!aid || aid === 'undefined') && cid) {
+        const cached = lookupCid(cid);
+        if (cached) { bvid = cached.bvid; aid = cached.aid; }
+    }
     let realCid = cid;
     if (!realCid) {
         const cidRes = await getCid(bvid, aid, cookie);
