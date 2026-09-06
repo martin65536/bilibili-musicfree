@@ -19,7 +19,7 @@ async function proxy(path, params) {
 
 module.exports = {
     platform: "bilibili-proxy",
-    version: "0.7.4",
+    version: "0.7.5",
     author: "猫头猫 (代理壳版)",
     cacheControl: "no-cache",
     srcUrl: "https://cdn.jsdelivr.net/gh/martin65536/bilibili-musicfree@main/bilibili-proxy.js",
