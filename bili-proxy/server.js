@@ -383,6 +383,7 @@ async function apiMediaSource(query) {
 async function apiMusicInfo(query) {
     const bvid = query.bvid;
     const aid = query.aid;
+    const cid = query.cid;  // 可能有 cid，用于区分分P
     const cookie = config.cookie || query.cookie || await getAnonCookie();
     const cidRes = await getCid(bvid, aid, cookie);
     const d = cidRes.data;
@@ -390,7 +391,20 @@ async function apiMusicInfo(query) {
     const result = {};
     if (d.cid) result.cid = d.cid;
     if (d.duration) result.duration = d.duration;
-    if (d.title) result.title = he.decode(d.title);
+    // 标题：多P视频用 cid 对应的分P标题(part)，不用合集标题
+    const pages = d.pages || [];
+    if (cid && pages.length > 1) {
+        const page = pages.find(p => String(p.cid) === String(cid));
+        if (page && page.part) {
+            result.title = page.part;
+        } else {
+            result.title = he.decode(d.title || '');
+        }
+    } else if (pages.length === 1 && pages[0].part) {
+        result.title = pages[0].part;
+    } else {
+        result.title = he.decode(d.title || '');
+    }
     if (d.pic) result.artwork = formatArtwork(d.pic);
     if (d.owner && d.owner.name) result.artist = d.owner.name;
     if (d.desc) result.desc = d.desc.trim();
