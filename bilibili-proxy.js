@@ -19,7 +19,7 @@ async function proxy(path, params) {
 
 module.exports = {
     platform: "bilibili-proxy",
-    version: "0.7.6",
+    version: "0.7.8",
     author: "猫头猫 (代理壳版)",
     cacheControl: "no-cache",
     srcUrl: "https://cdn.jsdelivr.net/gh/martin65536/bilibili-musicfree@main/bilibili-proxy.js",
@@ -81,6 +81,6 @@ module.exports = {
         return proxy('/lyric', { bvid: musicItem.bvid, aid: musicItem.aid, cid: musicItem.cid });
     },
     async getMusicInfo(musicItem) {
-        return proxy('/musicInfo', { bvid: musicItem.bvid, aid: musicItem.aid });
+        return proxy('/musicInfo', { bvid: musicItem.bvid, aid: musicItem.aid, cid: musicItem.cid });
     },
 };
